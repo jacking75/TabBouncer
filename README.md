@@ -1,5 +1,7 @@
 # TabBouncer
 
+![TabBouncer가 사용자 요청 탭은 통과시키고 자동 광고 팝업을 차단하는 모습](docs/images/tabbouncer-hero.png)
+
 TabBouncer는 Windows 11의 Chrome에서 자동으로 생기는 광고 탭과 팝업 창을 감지해 닫는 .NET 8 프로그램이다. 사용자가 눈에 보이는 링크나 폼을 직접 선택해 연 탭은 목적지 URL을 대조해 유지한다.
 
 ## 판정 방식
