@@ -15,6 +15,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace TabBouncer;
 
@@ -119,6 +120,17 @@ internal readonly record struct IntentAssessment(
 }
 
 internal sealed record ClosedItem(string Url, string OpenerUrl, int Score, string Reason, DateTime At);
+
+internal sealed record AppSnapshot(
+    bool Enabled,
+    bool DryRun,
+    bool Connected,
+    string ConnectionStatus,
+    int CloseThreshold,
+    int ClosedCount,
+    string WatchedSites);
+
+internal sealed record AppLogEntry(DateTime At, string Level, string Message);
 
 internal sealed class CdpClient : IAsyncDisposable
 {
@@ -339,7 +351,11 @@ internal static class Program
     private static Config _config = Config.Defaults();
     private static CdpClient? _cdp;
     private static FileSystemWatcher? _configWatcher;
+    private static volatile bool _connected;
+    private static string _connectionStatus = "Chrome 연결 준비 중";
     private static long Now => Environment.TickCount64;
+
+    internal static event Action<AppLogEntry>? LogEmitted;
 
     private const string ClickTrackerScript = """
         (() => {
@@ -441,7 +457,8 @@ internal static class Program
         })();
         """;
 
-    private static async Task<int> Main(string[] args)
+    [STAThread]
+    private static int Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
 
@@ -454,22 +471,34 @@ internal static class Program
         LoadOrCreateConfig();
         ApplyArguments(args);
 
-        Console.CancelKeyPress += (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            ApplicationCancellation.Cancel();
-        };
-
-        PrintBanner();
-        _ = Task.Run(ReadKeys);
+        ApplicationConfiguration.Initialize();
+        using var window = new MainForm();
         _ = Task.Run(() => SweepAsync(ApplicationCancellation.Token));
         StartConfigWatcher();
+        Task engine = Task.Run(() => RunEngineAsync(ApplicationCancellation.Token));
 
-        while (!ApplicationCancellation.IsCancellationRequested)
+        Application.Run(window);
+        ApplicationCancellation.Cancel();
+        try
+        {
+            engine.GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        _configWatcher?.Dispose();
+        return 0;
+    }
+
+    private static async Task RunEngineAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
-                await RunSessionAsync(ApplicationCancellation.Token).ConfigureAwait(false);
+                SetConnectionState(false, "Chrome 연결 중");
+                await RunSessionAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -480,13 +509,14 @@ internal static class Program
                 Error("세션 오류: " + ex.Message);
             }
 
-            if (ApplicationCancellation.IsCancellationRequested)
+            if (cancellationToken.IsCancellationRequested)
                 break;
 
+            SetConnectionState(false, "5초 후 다시 연결");
             Info("5초 후 Chrome에 다시 연결한다.");
             try
             {
-                await Task.Delay(5000, ApplicationCancellation.Token).ConfigureAwait(false);
+                await Task.Delay(5000, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -494,9 +524,8 @@ internal static class Program
             }
         }
 
-        _configWatcher?.Dispose();
+        SetConnectionState(false, "종료됨");
         Info("종료한다.");
-        return 0;
     }
 
     private static void ApplyArguments(IEnumerable<string> args)
@@ -600,6 +629,7 @@ internal static class Program
         client.Closed += exception =>
         {
             string detail = exception is null ? "" : " (" + exception.Message + ")";
+            SetConnectionState(false, "Chrome 연결 끊김");
             Warning("Chrome 연결이 끊어졌다." + detail);
             disconnected.TrySetResult(true);
         };
@@ -607,6 +637,7 @@ internal static class Program
 
         await client.ConnectAsync(webSocketUrl, cancellationToken).ConfigureAwait(false);
         Success("Chrome에 연결했다.");
+        SetConnectionState(true, "Chrome 연결됨");
 
         await client.SendAsync(
             "Target.setDiscoverTargets",
@@ -1675,6 +1706,65 @@ internal static class Program
         Success("정상 사이트로 등록했다: " + domain);
     }
 
+    internal static AppSnapshot GetSnapshot()
+    {
+        int closedCount;
+        lock (RecentClosed)
+            closedCount = RecentClosed.Count;
+
+        string watched = _config.WatchedSites.Count == 0
+            ? "모든 사이트 자동 판정"
+            : string.Join(", ", _config.WatchedSites);
+
+        return new AppSnapshot(
+            _config.Enabled,
+            _config.DryRun,
+            _connected,
+            _connectionStatus,
+            _config.CloseThreshold,
+            closedCount,
+            watched);
+    }
+
+    internal static IReadOnlyList<ClosedItem> GetRecentClosed()
+    {
+        lock (RecentClosed)
+            return RecentClosed.ToArray();
+    }
+
+    internal static void ToggleMonitoring()
+    {
+        _config.Enabled = !_config.Enabled;
+        Info("감시 " + (_config.Enabled ? "재개" : "일시중지"));
+    }
+
+    internal static void SetDryRun(bool enabled)
+    {
+        if (_config.DryRun == enabled)
+            return;
+
+        _config.DryRun = enabled;
+        Info("DRY-RUN " + (enabled ? "ON (관측만)" : "OFF (실제 종료)"));
+    }
+
+    internal static void ReloadConfig()
+    {
+        LoadOrCreateConfig();
+        Info("설정을 다시 적용했다.");
+    }
+
+    internal static void UndoLatest() => UndoLastClosed();
+
+    internal static void AllowLatestSite() => AllowLastClosedSite();
+
+    internal static string GetConfigPath() => ConfigPath;
+
+    private static void SetConnectionState(bool connected, string status)
+    {
+        _connected = connected;
+        _connectionStatus = status;
+    }
+
     private static int RunSelfTests()
     {
         int passed = 0;
@@ -1773,13 +1863,23 @@ internal static class Program
 
     private static void WriteLine(ConsoleColor color, string marker, string message)
     {
+        DateTime now = DateTime.Now;
         lock (LogLock)
         {
             Console.ForegroundColor = color;
-            Console.Write($"[{DateTime.Now:HH:mm:ss}] {marker} ");
+            Console.Write($"[{now:HH:mm:ss}] {marker} ");
             Console.ResetColor();
             Console.WriteLine(message);
         }
+
+        string level = color switch
+        {
+            ConsoleColor.Green => "success",
+            ConsoleColor.Yellow => "warning",
+            ConsoleColor.Red => "error",
+            _ => "info"
+        };
+        LogEmitted?.Invoke(new AppLogEntry(now, level, message));
     }
 
     private static void Info(string message) => WriteLine(ConsoleColor.Gray, "·", message);

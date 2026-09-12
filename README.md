@@ -41,9 +41,9 @@ dotnet run -c Release
 dotnet publish -c Release -r win-x64 --self-contained false
 ```
 
-생성 파일은 `bin\Release\net8.0\win-x64\publish\tabbouncer.exe`에 있다. 실행하면 디버깅 포트 9222와 전용 프로필을 사용하는 Chrome을 자동으로 연다.
+생성 파일은 `bin\Release\net8.0-windows\win-x64\publish\tabbouncer.exe`에 있다. 실행하면 디버깅 포트 9222와 전용 프로필을 사용하는 Chrome을 자동으로 연다.
 
-TabBouncer는 콘솔 프로그램이다. 실행 중 콘솔에서 현재 판정 결과를 확인하고 단축키로 감시 상태를 바꿀 수 있다.
+TabBouncer는 Windows GUI 프로그램이다. 실행 창에서 Chrome 연결 상태와 최근 차단 내역을 확인하고 감시 상태를 바꿀 수 있다.
 
 테스트나 별도 인스턴스에서 설정과 프로필 위치를 분리하려면 `--data-dir=C:\원하는\경로`를 지정한다.
 Chrome에 추가 실행 인수가 필요하면 생성된 설정의 `chromeArguments` 배열에 넣는다.
@@ -71,17 +71,16 @@ Chrome에 추가 실행 인수가 필요하면 생성된 설정의 `chromeArgume
 }
 ```
 
-`dryRun`은 탭을 실제로 닫지 않고 판정 결과만 콘솔과 `events.jsonl`에 기록하는 관찰 모드다. 처음 관찰만 하려면 `dryRun`을 `true`로 바꾸거나 `--dry-run` 인수를 사용한다. `false`이면 종료 조건을 만족한 탭을 실제로 닫는다. `strictMode`는 정상 팝업 오탐 가능성을 높이므로 기본값을 유지하는 편이 좋다.
+`dryRun`은 탭을 실제로 닫지 않고 판정 결과만 GUI 활동 목록과 `events.jsonl`에 기록하는 관찰 모드다. 처음 관찰만 하려면 GUI에서 관측 모드를 켜거나 `dryRun`을 `true`로 바꾸거나 `--dry-run` 인수를 사용한다. `false`이면 종료 조건을 만족한 탭을 실제로 닫는다. `strictMode`는 정상 팝업 오탐 가능성을 높이므로 기본값을 유지하는 편이 좋다.
 
-## 실행 중 키
+## GUI 기능
 
-- `d`: 실제 종료와 DRY-RUN 전환
-- `p`: 감시 일시중지 또는 재개
-- `u`: 마지막으로 닫은 탭 복구
-- `l`: 최근 종료 목록
-- `w`: 마지막으로 닫은 도메인을 `allowedSites`에 정상 사이트로 등록
-- `r`: 설정 다시 읽기
-- `q`: TabBouncer 종료
+- Chrome 연결, 감시 상태, 작동 모드, 최근 차단 수 확인
+- 감시 일시중지 또는 재개
+- 실제 종료와 관측 모드 전환
+- 마지막으로 닫은 탭 다시 열기
+- 마지막으로 닫은 도메인을 정상 사이트로 등록
+- `config.json` 열기 및 설정 다시 읽기
 
 종료 횟수 제한은 없다. 짧은 시간에 광고 탭이나 창이 10개 이상 생성돼도 광고로 판정되는 항목은 모두 닫는다. 브라우저의 마지막 일반 탭은 닫지 않는다.
 
