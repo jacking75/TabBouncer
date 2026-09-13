@@ -15,14 +15,14 @@ packaging/
 
 ## 1. 매니페스트 갱신
 
-릴리스 워크플로가 GitHub 릴리스를 게시한 뒤, 게시된 `SHA256SUMS.txt`로 매니페스트를 채운다.
+GitHub 릴리스를 게시한 뒤, 게시된 `SHA256SUMS.txt`로 매니페스트를 채운다.
 
 ```powershell
 ./packaging/update-manifests.ps1 -Version 1.1.0 `
   -Sha256Sums https://github.com/jacking75/TabBouncer/releases/download/v1.1.0/SHA256SUMS.txt
 ```
 
-로컬에서 `build/package.ps1`을 돌린 결과로 시험할 때는 `-Sha256Sums artifacts/SHA256SUMS.txt`를 준다. 이 해시는 릴리스 워크플로가 만든 파일과 다르므로 커밋하지 않는다.
+릴리스에 올린 바로 그 빌드가 남아 있으면 `-Sha256Sums artifacts/SHA256SUMS.txt`를 줘도 된다. 다시 빌드한 zip은 해시가 달라지므로, 그 결과로 채운 매니페스트는 커밋하지 않는다.
 
 ## 2. winget
 
@@ -63,9 +63,9 @@ scoop은 앱 폴더를 버전마다 새로 만들기 때문에 `persist`로 `con
 
 ## 4. 코드 서명
 
-서명하지 않은 실행 파일은 SmartScreen 경고를 띄우고, 패키지 관리자 검사에서도 백신 오탐이 날 수 있다. 인증서를 구하면 저장소 비밀값 두 개를 넣는다. 릴리스 워크플로가 `build/package.ps1`에서 자동으로 서명한다.
+서명하지 않은 실행 파일은 SmartScreen 경고를 띄우고, 패키지 관리자 검사에서도 백신 오탐이 날 수 있다. 인증서를 구하면 `build/package.ps1`을 돌리기 전에 환경 변수 두 개를 설정한다. 스크립트가 실행 파일에 서명한다.
 
-| 비밀값 | 내용 |
+| 환경 변수 | 내용 |
 |---|---|
 | `SIGNING_CERTIFICATE_BASE64` | 코드 서명 인증서 PFX 파일을 Base64로 인코딩한 값 |
 | `SIGNING_CERTIFICATE_PASSWORD` | PFX 암호 |
@@ -74,4 +74,4 @@ scoop은 앱 폴더를 버전마다 새로 만들기 때문에 `persist`로 `con
 [Convert]::ToBase64String([IO.File]::ReadAllBytes("codesign.pfx")) | Set-Clipboard
 ```
 
-오픈소스 프로젝트는 [SignPath Foundation](https://signpath.org/)의 무료 서명을 신청할 수 있다. [Azure Trusted Signing](https://learn.microsoft.com/azure/trusted-signing/)을 쓰면 PFX 대신 전용 GitHub 액션으로 서명 단계를 바꾼다.
+오픈소스 프로젝트는 [SignPath Foundation](https://signpath.org/)의 무료 서명을 신청할 수 있다. [Azure Trusted Signing](https://learn.microsoft.com/azure/trusted-signing/)을 쓰면 PFX 대신 signtool의 Trusted Signing 확장(`/dlib`)으로 서명 단계를 바꾼다.

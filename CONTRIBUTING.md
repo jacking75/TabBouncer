@@ -29,7 +29,7 @@ $env:TABBOUNCER_BROWSER = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\m
 node .\tests\browser-smoke.mjs
 ```
 
-단일 실행 파일 배포본은 다음처럼 만든다. 릴리스 워크플로도 같은 명령을 쓴다.
+단일 실행 파일 배포본은 다음처럼 만든다. 릴리스용 zip은 [릴리스 절차](#릴리스-절차)대로 `build/package.ps1`로 만든다.
 
 ```powershell
 dotnet publish src -c Release -r win-x64 --self-contained false -o out\fd
@@ -155,7 +155,19 @@ node .\tests\browser-smoke.mjs
 
 1. `src/TabBouncer.csproj`의 `<Version>`을 올린다.
 2. [CHANGELOG.md](CHANGELOG.md)에 `## [X.Y.Z] - 날짜` 절을 쓴다.
-3. main에 커밋한 뒤 `vX.Y.Z` 태그를 푸시한다.
-4. `.github/workflows/release.yml`이 두 가지 zip과 `SHA256SUMS.txt`를 만들어 GitHub Release에 올린다. 릴리스 노트는 CHANGELOG의 해당 절이다.
-5. 코드 서명 비밀값(`SIGNING_CERTIFICATE_BASE64`, `SIGNING_CERTIFICATE_PASSWORD`)이 저장소에 있으면 워크플로가 실행 파일에 서명한다.
-6. winget·scoop 매니페스트는 [packaging/README.md](packaging/README.md)를 따라 갱신한다.
+3. main에 커밋하고 푸시한다.
+4. 로컬에서 `build/package.ps1`을 돌린다. `artifacts/`에 두 가지 zip, `SHA256SUMS.txt`, CHANGELOG의 해당 절을 잘라 낸 `release-notes.md`가 생긴다. PowerShell 7이 없으면 `powershell -ExecutionPolicy Bypass -File build\package.ps1`로 돌린다.
+5. 코드 서명 환경 변수(`SIGNING_CERTIFICATE_BASE64`, `SIGNING_CERTIFICATE_PASSWORD`)가 있으면 스크립트가 실행 파일에 서명한다.
+6. `gh`로 릴리스를 만든다. `vX.Y.Z` 태그는 이 명령이 main의 최신 커밋에 만든다.
+
+   ```powershell
+   gh release create vX.Y.Z `
+     artifacts/TabBouncer-vX.Y.Z-win-x64.zip `
+     artifacts/TabBouncer-vX.Y.Z-win-x64-selfcontained.zip `
+     artifacts/SHA256SUMS.txt `
+     --title "TabBouncer vX.Y.Z" --notes-file artifacts/release-notes.md
+   ```
+
+7. winget·scoop 매니페스트는 [packaging/README.md](packaging/README.md)를 따라 갱신한다.
+
+저장소에는 GitHub Actions 워크플로를 두지 않는다. 빌드·테스트·릴리스는 모두 로컬에서 한다.
