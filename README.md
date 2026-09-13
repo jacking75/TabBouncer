@@ -70,6 +70,28 @@ TabBouncer는 Windows GUI 프로그램이다. 실행하면 창은 뜨지만 감�
 테스트나 별도 인스턴스에서 설정과 프로필 위치를 분리하려면 `--data-dir=C:\원하는\경로`를 지정한다.
 Chrome에 추가 실행 인수가 필요하면 생성된 설정의 `chromeArguments` 배열에 넣는다.
 
+## 사용 방법
+
+### 1. TabBouncer를 실행하고 감시를 시작한다
+
+프로그램을 실행하면 감시는 안전을 위해 항상 꺼진 상태로 시작한다. 노란 안내 영역과 **감시 상태: 일시중지**를 확인한 뒤, 왼쪽의 **"감시 시작"** 버튼을 누른다. Chrome이 연결되어 있지 않으면 오른쪽의 **"Chrome 열기"** 버튼으로 전용 Chrome 창을 연다.
+
+![감시가 꺼진 초기 TabBouncer 창. 감시 시작 버튼, Chrome 열기 버튼, 관측 모드 선택과 최근 차단 목록이 보인다.](docs/images/001.png)
+
+감시를 시작하면 상태가 **감시 중**으로 바뀌고, 이후 전용 Chrome에서 새로 생기는 탭과 창을 판정한다. 처음에는 **관측 모드(탭을 닫지 않음)** 를 켜서 어떤 항목이 차단 대상인지 활동 로그로 확인해도 된다.
+
+### 2. 전용 Chrome 창에서 웹을 연다
+
+TabBouncer가 여는 Chrome은 일반 Chrome 프로필과 분리된 전용 창이다. 이 창의 주소창에 방문할 사이트를 입력해 사용한다. 안내 페이지가 보이면 보호 창이 정상적으로 열려 있다는 뜻이다.
+
+![TabBouncer 전용 Chrome의 보호 안내 페이지. 감시가 꺼진 상태와 주소창에서 사이트를 여는 방법을 안내한다.](docs/images/002.png)
+
+이 전용 창에서 사용자 의도로 연 링크와 버튼 동작은 최대한 유지한다. 반면 클릭과 무관하게 열리거나, 클릭한 목적지와 다른 외부 탭으로 함께 열린 광고성 팝업은 닫는다. 현재 보던 탭이 자동으로 외부 사이트로 이동하면 원래 페이지로 되돌린다.
+
+### 3. 차단 결과를 확인하고 예외를 등록한다
+
+TabBouncer 창의 **최근 차단한 탭**에서 주소, 점수, 판정 사유를 확인한다. 정상 사이트가 잘못 닫혔다면 항목을 선택한 뒤 **"다시 열기"**로 복구하거나 **"정상 사이트로 등록"**으로 해당 도메인과 하위 도메인을 허용한다. 설정을 직접 바꾸려면 **"설정 열기"**에서 `config.json`을 저장하면 즉시 다시 읽는다.
+
 ## 설정
 
 첫 실행 때 **실행 파일과 같은 폴더**에 `config.json`을 만든다. 실행 중 파일을 저장하면 변경 사항을 자동으로 다시 읽는다. `config.json`의 `enabled` 값과 무관하게, 프로그램을 실행할 때마다 감시는 항상 꺼진 상태로 시작하고 GUI의 "감시 시작" 버튼을 눌러야 켜진다. 실행 중에 설정을 저장해 다시 읽어도 감시 켜짐·꺼짐 상태는 바뀌지 않는다. 자동화된 테스트 등 GUI 조작 없이 바로 감시를 켜야 하면 `--auto-start` 인수를 추가한다.
@@ -130,3 +152,27 @@ node .\tests\browser-smoke.mjs
 웹페이지의 임의 JavaScript 버튼이 여는 창은 사람이 기대한 결과인지 코드만으로 완벽하게 알 수 없다. TabBouncer는 실제 링크 목적지가 있으면 정확히 대조하고, 일반 버튼은 사용자 의도로 우선 보호한다. 특정 정상 서비스가 잘못 닫히면 GUI의 "정상 사이트로 등록" 버튼을 누르거나 `allowedSites`에 도메인을 추가한다.
 
 현재 탭 리다이렉트 하이재킹 차단도 같은 한계를 가진다. 클릭 없이 다른 사이트로 자동 이동하는 정상 서비스(세션 만료 안내, 자동 로그아웃 이동 등)를 오탐할 수 있으며, 이때도 `allowedSites` 등록이나 `blockRedirectHijack` 끄기로 대응한다.
+
+## 코드를 이해하거나 확장하려면
+
+TabBouncer는 Windows Forms UI 위에 Chrome DevTools Protocol(CDP) 감시 엔진을 둔 단일 실행 파일 구조다. `Program.cs`가 앱의 중심이며, Chrome 연결·CDP 이벤트 처리·사용자 클릭 의도 수집·광고 점수 판정·탭 종료·설정과 로그를 함께 관리한다. UI는 엔진 상태를 표시하고 사용자의 명령을 전달하는 역할에 집중한다.
+
+```mermaid
+flowchart LR
+    Chrome[전용 Chrome] <-->|CDP WebSocket| Cdp[CdpClient]
+    Cdp --> Engine[Program.cs\n감시 엔진]
+    Engine --> Intent[클릭 의도 수집]
+    Engine --> Judge[점수 판정과 탭 종료\n리다이렉트 복구]
+    Engine --> Storage[config.json\n로그와 이벤트]
+    Engine --> UI[MainForm.cs\nWindows Forms UI]
+    UI -->|감시, 재실행, 복구, 허용| Engine
+```
+
+처음 볼 때는 다음 순서가 가장 빠르다.
+
+1. [Program.cs](src/Program.cs)의 `Main`, `RunEngineAsync`, `RunSessionAsync`로 시작과 Chrome 연결 수명 주기를 본다.
+2. 같은 파일의 `CdpClient`와 `OnCdpEvent`에서 CDP 메시지를 요청·수신하고 페이지 이벤트로 분기하는 방식을 확인한다.
+3. `HandleIntentBinding`, `AssessIntent`, `EvaluateAsync`, `Score`를 따라가면 클릭 의도와 새 탭 URL을 대조해 점수를 만들고 `Target.closeTarget`으로 종료하는 핵심 흐름을 이해할 수 있다.
+4. 현재 탭 강제 이동 기능은 `HandleFrameNavigated`, `EvaluateRedirectHijackAsync`, `ScoreRedirectHijack`에 있다. 새 탭 판정과 별도로 원래 URL로 되돌리는 경로다.
+5. [MainForm.cs](src/MainForm.cs)는 상태 카드, 최근 차단 목록, 감시·관측 모드·Chrome 재실행 버튼을 만들고 `Program`의 공개 메서드를 호출한다. [ConfigForm.cs](src/ConfigForm.cs)는 `config.json` 편집과 JSON 검증 UI만 담당한다.
+6. 설정 항목을 추가한다면 [config.json](src/config.json)과 `Config`를 먼저 맞추고, 판정에 쓰는 값이면 `Score` 또는 `ScoreRedirectHijack`과 자체 테스트를 함께 수정한다. 실제 Chrome 이벤트 흐름은 [browser-smoke.mjs](tests/browser-smoke.mjs)에서 재현하고 검증한다.
