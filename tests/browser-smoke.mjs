@@ -298,9 +298,11 @@ async function currentUrl(client) {
 
 async function trackerReady(client) {
   // 첫 탭은 실제 문서가 커밋되기 전까지 about:blank에 추적 스크립트가 먼저 설치된다.
+  // 추적기는 격리 월드에서 실행되므로 페이지 쪽에서는 두 월드가 공유하는 DOM 표시로만 설치 여부를 확인한다.
   const result = await client.send('Runtime.evaluate', {
     expression: "location.href !== 'about:blank' && document.readyState === 'complete' && " +
-      "document.__tabBouncerIntentTrackerInstalledV1 === true",
+      "document.documentElement?.getAttribute('data-tabbouncer-tracker') === '1' && " +
+      "typeof globalThis.__tabBouncerIntent === 'undefined'",
     returnByValue: true
   });
   return result.result.value === true;
@@ -378,6 +380,12 @@ async function getFreePort() {
 }
 
 function findChrome() {
+  // TABBOUNCER_BROWSER로 Edge 같은 다른 Chromium 계열 브라우저를 지정할 수 있다.
+  if (process.env.TABBOUNCER_BROWSER) {
+    if (!existsSync(process.env.TABBOUNCER_BROWSER))
+      throw new Error(`TABBOUNCER_BROWSER 경로가 없다: ${process.env.TABBOUNCER_BROWSER}`);
+    return process.env.TABBOUNCER_BROWSER;
+  }
   const candidates = [
     process.env.PROGRAMFILES && path.join(
       process.env.PROGRAMFILES, 'Google', 'Chrome', 'Application', 'chrome.exe'),

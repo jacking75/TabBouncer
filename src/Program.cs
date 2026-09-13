@@ -3,11 +3,10 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
-using System.Net.WebSockets;
+using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -19,325 +18,25 @@ using System.Windows.Forms;
 
 namespace TabBouncer;
 
-internal sealed class Config
-{
-    public bool Enabled { get; set; } = true;
-    public bool DryRun { get; set; }
-    public bool StrictMode { get; set; }
-    public bool PreemptiveBlock { get; set; } = true;
-    public bool RefocusOpener { get; set; } = true;
-    public bool BlockAutomaticCrossSitePopups { get; set; } = true;
-    public bool ProtectExplicitClicks { get; set; } = true;
-    public bool BlockRedirectHijack { get; set; } = true;
-
-    public int CloseThreshold { get; set; } = 80;
-    public int DebounceMs { get; set; } = 1200;
-    public int IntentWindowMs { get; set; } = 3500;
-    public int DebugPort { get; set; } = 9222;
-    public bool AutoLaunchChrome { get; set; } = true;
-    public string ChromePath { get; set; } = "";
-    public string UserDataDir { get; set; } = "";
-    public string StartUrl { get; set; } = "";
-    public List<string> ChromeArguments { get; set; } = new();
-
-    public List<string> WatchedSites { get; set; } = new();
-    public List<string> AdDomains { get; set; } = new();
-    public List<string> AllowedSites { get; set; } = new();
-    public List<string> Whitelist { get; set; } = new();
-    public List<string> SuspiciousTlds { get; set; } = new();
-
-    public static Config Defaults() => new()
-    {
-        AdDomains = new()
-        {
-            "popads.net", "popcash.net", "propellerads.com", "adsterra.com",
-            "exoclick.com", "exdynsrv.com", "hilltopads.net", "adcash.com",
-            "clickadu.com", "trafficstars.com", "juicyads.com", "bodelen.com",
-            "onclickalgo.com", "onclckpro.com", "onclasrv.com", "bidgear.com",
-            "doubleclick.net", "adnxs.com", "adsrvr.org", "mgid.com",
-            "revcontent.com", "taboola.com", "outbrain.com", "zeropark.com",
-            "clickaine.com", "popunder.net", "richads.com", "monetag.com",
-            "incompetencesorting.com"
-        },
-        Whitelist = new()
-        {
-            "accounts.google.com", "login.microsoftonline.com", "appleid.apple.com",
-            "github.com", "nid.naver.com", "accounts.kakao.com", "toss.im",
-            "kftc.or.kr", "paypal.com"
-        },
-        SuspiciousTlds = new()
-        {
-            "top", "xyz", "buzz", "click", "link", "cyou", "icu", "sbs",
-            "rest", "lol"
-        }
-    };
-}
-
-internal sealed class TargetRecord
-{
-    public string TargetId = "";
-    public string Type = "";
-    public string Url = "";
-    public string? OpenerId;
-    public string? SessionId;
-}
-
-internal sealed class PageContext
-{
-    public string TargetId = "";
-    public string? OpenerId;
-    public string InitialUrl = "";
-    public long CreatedAt;
-    public int Decided;
-    public bool WindowChecked;
-    public bool PopupLikely;
-    public int Redirects;
-    public string? PausedSessionId;
-    public long PausedAt;
-    public bool UserApproved;
-    public string ApprovalReason = "";
-    public string CommittedUrl = "";
-    public long PageNavigationRequestedAt;
-    public string RevertedFromUrl = "";
-    public long RevertedAt;
-    public int RevertCount;
-}
-
-internal sealed record UserIntent(
-    string TargetId,
-    string Kind,
-    string Url,
-    string PageUrl,
-    string Label,
-    bool OpensNewContext,
-    long ReceivedAt);
-
-internal readonly record struct IntentAssessment(
-    bool Approved,
-    bool Unexpected,
-    bool Automatic,
-    bool UserControl,
-    string Reason)
-{
-    public static IntentAssessment Explicit(string reason) => new(true, false, false, false, reason);
-    public static IntentAssessment Mismatch(string reason) => new(false, true, false, false, reason);
-    public static IntentAssessment Auto(string reason) => new(false, false, true, false, reason);
-    public static IntentAssessment Control(string reason) => new(false, false, false, true, reason);
-    public static IntentAssessment Neutral(string reason) => new(false, false, false, false, reason);
-}
-
-internal sealed record ClosedItem(string Url, string OpenerUrl, int Score, string Reason, DateTime At);
-
-internal sealed record AppSnapshot(
-    bool Enabled,
-    bool DryRun,
-    bool Connected,
-    string ConnectionStatus,
-    int CloseThreshold,
-    int ClosedCount,
-    string WatchedSites,
-    bool CanOpenChrome);
-
-internal sealed record AppLogEntry(DateTime At, string Level, string Message);
-
-internal sealed class CdpClient : IAsyncDisposable
-{
-    private readonly ClientWebSocket _socket = new();
-    private readonly SemaphoreSlim _sendLock = new(1, 1);
-    private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonNode?>> _pending = new();
-    private CancellationTokenSource? _receiveCancellation;
-    private int _nextId;
-
-    public event Action<string, JsonNode?, string?>? EventReceived;
-    public event Action<Exception?>? Closed;
-
-    public async Task ConnectAsync(string webSocketUrl, CancellationToken cancellationToken)
-    {
-        _socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
-        await _socket.ConnectAsync(new Uri(webSocketUrl), cancellationToken).ConfigureAwait(false);
-        _receiveCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _ = Task.Run(() => ReceiveLoopAsync(_receiveCancellation.Token));
-    }
-
-    public async Task<JsonNode?> SendAsync(
-        string method,
-        JsonObject? parameters = null,
-        string? sessionId = null,
-        int timeoutMs = 5000)
-    {
-        int id = Interlocked.Increment(ref _nextId);
-        var message = new JsonObject
-        {
-            ["id"] = id,
-            ["method"] = method
-        };
-        if (parameters is not null)
-            message["params"] = parameters;
-        if (sessionId is not null)
-            message["sessionId"] = sessionId;
-
-        var completion = new TaskCompletionSource<JsonNode?>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        _pending[id] = completion;
-
-        byte[] bytes = Encoding.UTF8.GetBytes(message.ToJsonString());
-        await _sendLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (_socket.State != WebSocketState.Open)
-                throw new InvalidOperationException("CDP WebSocket이 닫혀 있다.");
-
-            await _socket.SendAsync(
-                new ArraySegment<byte>(bytes),
-                WebSocketMessageType.Text,
-                true,
-                CancellationToken.None).ConfigureAwait(false);
-        }
-        catch
-        {
-            _pending.TryRemove(id, out _);
-            throw;
-        }
-        finally
-        {
-            _sendLock.Release();
-        }
-
-        using var timeout = new CancellationTokenSource(timeoutMs);
-        using var registration = timeout.Token.Register(() =>
-        {
-            if (_pending.TryRemove(id, out var timedOut))
-                timedOut.TrySetException(new TimeoutException($"CDP 명령 시간 초과: {method}"));
-        });
-        return await completion.Task.ConfigureAwait(false);
-    }
-
-    public void Fire(string method, JsonObject? parameters = null, string? sessionId = null)
-    {
-        _ = SendAsync(method, parameters, sessionId).ContinueWith(
-            _ => { },
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
-    }
-
-    private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
-    {
-        var buffer = new byte[64 * 1024];
-        using var stream = new MemoryStream();
-        Exception? failure = null;
-
-        try
-        {
-            while (!cancellationToken.IsCancellationRequested &&
-                   _socket.State == WebSocketState.Open)
-            {
-                stream.SetLength(0);
-                WebSocketReceiveResult result;
-                do
-                {
-                    result = await _socket.ReceiveAsync(
-                        new ArraySegment<byte>(buffer), cancellationToken).ConfigureAwait(false);
-                    if (result.MessageType == WebSocketMessageType.Close)
-                        throw new WebSocketException("Chrome이 CDP 연결을 종료했다.");
-                    stream.Write(buffer, 0, result.Count);
-                }
-                while (!result.EndOfMessage);
-
-                JsonNode? node;
-                try
-                {
-                    node = JsonNode.Parse(Encoding.UTF8.GetString(
-                        stream.GetBuffer(), 0, checked((int)stream.Length)));
-                }
-                catch (JsonException)
-                {
-                    continue;
-                }
-
-                if (node is null)
-                    continue;
-
-                if (node["id"] is JsonNode idNode)
-                {
-                    int id = idNode.GetValue<int>();
-                    if (!_pending.TryRemove(id, out var completion))
-                        continue;
-
-                    if (node["error"] is JsonNode error)
-                        completion.TrySetException(new InvalidOperationException(error.ToJsonString()));
-                    else
-                        completion.TrySetResult(node["result"]);
-                    continue;
-                }
-
-                string? method = node["method"]?.GetValue<string>();
-                if (!string.IsNullOrEmpty(method))
-                {
-                    EventReceived?.Invoke(
-                        method,
-                        node["params"],
-                        node["sessionId"]?.GetValue<string>());
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (Exception ex)
-        {
-            failure = ex;
-        }
-        finally
-        {
-            foreach (var item in _pending)
-                item.Value.TrySetCanceled();
-            _pending.Clear();
-            Closed?.Invoke(failure);
-        }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        try
-        {
-            _receiveCancellation?.Cancel();
-        }
-        catch
-        {
-        }
-
-        try
-        {
-            if (_socket.State == WebSocketState.Open)
-            {
-                await _socket.CloseAsync(
-                    WebSocketCloseStatus.NormalClosure,
-                    "TabBouncer 종료",
-                    CancellationToken.None).ConfigureAwait(false);
-            }
-        }
-        catch
-        {
-        }
-
-        _receiveCancellation?.Dispose();
-        _socket.Dispose();
-        _sendLock.Dispose();
-    }
-}
-
-internal static class Program
+// 진입점, 명령줄 인수, 중복 실행 방지, Chrome 연결 수명 주기를 담당한다.
+// 판정은 Program.Judge.cs, CDP 이벤트는 Program.Cdp.cs, Chrome 실행은 Program.Chrome.cs,
+// 설정·로그·통계는 Program.Storage.cs, GUI가 부르는 기능은 Program.Api.cs에 있다.
+internal static partial class Program
 {
     private const string AppName = "TabBouncer";
-    private const string IntentBindingName = "__tabBouncerIntent";
+    private const int MaxRecentItems = 50;
 
     private static string _dataDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppName);
-    private static string _configDirectory = AppContext.BaseDirectory;
-    private static string ConfigPath => Path.Combine(_configDirectory, "config.json");
+    private static bool _dataDirectoryFromArgument;
+    private static string _configDirectory = "";
+    private static string ConfigPath => Path.Combine(
+        _configDirectory.Length > 0 ? _configDirectory : AppContext.BaseDirectory, "config.json");
     private static string EventLogPath => Path.Combine(_dataDirectory, "events.jsonl");
     private static string LogFilePath => Path.Combine(_dataDirectory, "tabbouncer.log");
+    private static string StatsPath => Path.Combine(_dataDirectory, "stats.json");
+    private static string PendingUrlPath => Path.Combine(_dataDirectory, "pending-url.txt");
+    internal static string UiStatePath => Path.Combine(_dataDirectory, "ui-state.json");
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -353,6 +52,7 @@ internal static class Program
     private static readonly ConcurrentDictionary<string, PageContext> Pages = new();
     private static readonly ConcurrentDictionary<string, ConcurrentQueue<UserIntent>> Intents = new();
     private static readonly ConcurrentQueue<UserIntent> GlobalIntents = new();
+    private static readonly ConcurrentQueue<string> PendingOpenUrls = new();
     private static readonly List<ClosedItem> RecentClosed = new();
     private static readonly object LogLock = new();
     private static readonly CancellationTokenSource ApplicationCancellation = new();
@@ -364,153 +64,26 @@ internal static class Program
     private static volatile bool _waitingForChrome;
     private static FileSystemWatcher? _configWatcher;
     private static volatile bool _connected;
-    private static string _connectionStatus = "Chrome 연결 준비 중";
+    private static string _connectionStatus = "";
+    private static string _browserName = "";
+    private static string _browserVersion = "";
+    private static string _startUrlFromArgument = "";
+    private static string[] _launchArguments = Array.Empty<string>();
+    private static int _sessionClosedCount;
+    private static Mutex? _instanceMutex;
+    private static EventWaitHandle? _showRequest;
     private static long Now => Environment.TickCount64;
 
     internal static event Action<AppLogEntry>? LogEmitted;
+    internal static event Action<ClosedItem>? ItemRecorded;
+    internal static event Action? ShowRequested;
 
-    private const string ClickTrackerScript = """
-        (() => {
-          const installed = '__tabBouncerIntentTrackerInstalledV1';
-          if (document[installed]) return;
-          Object.defineProperty(document, installed, { value: true });
+    internal static bool StartMinimized { get; private set; }
 
-          const binding = globalThis.__tabBouncerIntent;
-          if (typeof binding !== 'function') return;
-
-          const clean = value => String(value || '').replace(/\s+/g, ' ').trim().slice(0, 160);
-          const send = value => {
-            try {
-              binding(JSON.stringify({
-                ...value,
-                pageUrl: location.href,
-                at: Date.now()
-              }));
-            } catch (_) {}
-          };
-
-          const pathElement = (event, selector) => {
-            for (const item of event.composedPath()) {
-              if (item instanceof Element && item.matches(selector)) return item;
-            }
-            return null;
-          };
-
-          const labelOf = element => clean(
-            element.innerText ||
-            element.getAttribute('aria-label') ||
-            element.getAttribute('title') ||
-            element.querySelector('img')?.getAttribute('alt') || ''
-          );
-
-          const visiblyDescribed = element => {
-            const style = getComputedStyle(element);
-            const rect = element.getBoundingClientRect();
-            return style.display !== 'none' &&
-              style.visibility !== 'hidden' &&
-              Number(style.opacity || 1) > 0.05 &&
-              rect.width >= 4 && rect.height >= 4 &&
-              labelOf(element).length > 0;
-          };
-
-          const recordPointer = event => {
-            if (!event.isTrusted) return;
-
-            const link = pathElement(event, 'a[href],area[href]');
-            if (link) {
-              const explicit = visiblyDescribed(link);
-              send({
-                kind: explicit ? 'link' : 'passive-link',
-                url: link.href || '',
-                label: labelOf(link),
-                opensNewContext: link.target === '_blank' || event.button === 1 ||
-                  event.ctrlKey || event.metaKey || event.shiftKey
-              });
-              return;
-            }
-
-            const control = pathElement(event,
-              'button,input,select,textarea,[role="button"],[role="link"],[contenteditable="true"]');
-            if (control) {
-              send({
-                kind: 'control',
-                url: '',
-                label: labelOf(control) || clean(control.value),
-                opensNewContext: false
-              });
-              return;
-            }
-
-            send({
-              kind: 'passive',
-              url: '',
-              label: '',
-              opensNewContext: false
-            });
-          };
-
-          addEventListener('pointerdown', recordPointer, true);
-          addEventListener('auxclick', recordPointer, true);
-          addEventListener('click', event => {
-            if (event.detail === 0) recordPointer(event);
-          }, true);
-
-          addEventListener('submit', event => {
-            if (!event.isTrusted || !(event.target instanceof HTMLFormElement)) return;
-            const form = event.target;
-            const submitter = event.submitter;
-            send({
-              kind: 'form',
-              url: submitter?.formAction || form.action || location.href,
-              label: submitter ? labelOf(submitter) : '',
-              opensNewContext: (submitter?.formTarget || form.target) === '_blank'
-            });
-          }, true);
-        })();
-        """;
-
-    private const string GuidePageHtml = """
-        <!doctype html>
-        <html lang="ko">
-        <meta charset="utf-8">
-        <title>TabBouncer 보호 창</title>
-        <style>
-          body { margin: 0; background: #f6f7f9; color: #181f2a;
-                 font-family: "Segoe UI", "Malgun Gothic", sans-serif; }
-          main { max-width: 640px; margin: 72px auto; padding: 32px 36px; background: #fff;
-                 border-radius: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
-          h1 { margin: 0 0 12px; font-size: 24px; }
-          p, li { color: #475467; line-height: 1.8; }
-          strong { color: #2563eb; }
-          #state { margin: 0 0 20px; padding: 16px 18px; border-radius: 10px;
-                   font-size: 18px; font-weight: 600; line-height: 1.6; }
-          #state.off { background: #fef3c7; color: #92400e; }
-          #state.on { background: #dcfce7; color: #166534; }
-        </style>
-        <main>
-          <div id="state"></div>
-          <h1>TabBouncer 보호 창</h1>
-          <p>이 창은 TabBouncer가 연 <strong>전용 Chrome</strong>이다.
-             광고 탭·창 차단은 <strong>이 창과 이 창에서 연 탭·창에서만</strong> 동작한다.</p>
-          <ul>
-            <li>보고 싶은 사이트는 이 창의 주소창에 입력해서 연다.</li>
-            <li>평소 쓰는 Chrome 창은 보호되지 않는다. Chrome 보안 정책상 기본 프로필은 제어할 수 없다.</li>
-            <li>이 창을 모두 닫으면 감시할 대상이 사라진다. 다시 열려면 TabBouncer의 <strong>Chrome 열기</strong>를 누른다.</li>
-          </ul>
-        </main>
-        <script>
-          window.__tabBouncerSetMonitoring = on => {
-            const state = document.getElementById('state');
-            state.className = on ? 'on' : 'off';
-            state.textContent = on
-              ? '감시 중이다. 이 창에서 생기는 광고 탭·창을 막는다.'
-              : '감시가 꺼져 있다. TabBouncer 창에서 "감시 시작"을 눌러야 광고 탭·창을 막는다.';
-            document.title = (on ? '' : '[감시 꺼짐] ') + 'TabBouncer 보호 창';
-          };
-          window.__tabBouncerSetMonitoring(window.__tabBouncerMonitoring ?? {{MONITORING}});
-        </script>
-        </html>
-        """;
+    internal static string Version =>
+        typeof(Program).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion.Split('+')[0] ?? "dev";
 
     [STAThread]
     private static int Main(string[] args)
@@ -521,17 +94,32 @@ internal static class Program
             return RunSelfTests();
         }
 
+        _launchArguments = args;
         ApplyDataDirectoryArgument(args);
         Directory.CreateDirectory(_dataDirectory);
+
+        if (!AcquireSingleInstance(args))
+            return 0;
+
+        _configDirectory = _dataDirectoryFromArgument ? _dataDirectory : ResolveConfigDirectory();
         LoadOrCreateConfig();
-        // 매 실행마다 사용자가 GUI에서 직접 시작 버튼을 눌러야 감시가 켜지도록,
-        // config.json에 저장된 값과 무관하게 항상 꺼진 상태로 띄운다.
-        // 자동화된 테스트 등에서는 --auto-start로 이 동작을 건너뛸 수 있다.
-        _config.Enabled = false;
+        L.SetLanguage(_config.Language);
+        _connectionStatus = L.T("status.preparing");
+
+        // 실행할 때마다 감시는 꺼진 상태로 시작한다. 사용자가 설정에서 명시적으로 켠 경우와
+        // 자동화용 --auto-start만 예외다. config.json의 enabled 값은 쓰지 않는다.
+        _config.Enabled = _config.StartMonitoringOnLaunch;
         ApplyArguments(args);
+
+        LoadStats();
+        LoadRecentFromEvents();
+        WriteStartupLog();
+        if (!_dataDirectoryFromArgument)
+            WindowsIntegration.RefreshAutoRunPath();
 
         ApplicationConfiguration.Initialize();
         using var window = new MainForm();
+        StartShowRequestListener(ApplicationCancellation.Token);
         _ = Task.Run(() => SweepAsync(ApplicationCancellation.Token));
         StartConfigWatcher();
         Task engine = Task.Run(() => RunEngineAsync(ApplicationCancellation.Token));
@@ -540,14 +128,90 @@ internal static class Program
         ApplicationCancellation.Cancel();
         try
         {
-            engine.GetAwaiter().GetResult();
+            engine.Wait(TimeSpan.FromSeconds(5));
         }
-        catch (OperationCanceledException)
+        catch (AggregateException)
         {
         }
 
         _configWatcher?.Dispose();
+        GC.KeepAlive(_instanceMutex);
         return 0;
+    }
+
+    // 같은 데이터 폴더를 쓰는 인스턴스는 하나만 둔다. 두 번째 실행은 첫 인스턴스 창을 앞으로 가져오고
+    // --url= 인수가 있으면 그 주소를 첫 인스턴스의 전용 Chrome에서 열도록 넘긴다.
+    private static bool AcquireSingleInstance(string[] args)
+    {
+        string key = InstanceKey();
+        _instanceMutex = new Mutex(true, @"Local\TabBouncer." + key, out bool first);
+        _showRequest = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\TabBouncer.Show." + key);
+        if (first)
+            return true;
+
+        string? url = UrlArgument(args);
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            try
+            {
+                File.AppendAllText(PendingUrlPath, url + Environment.NewLine, new UTF8Encoding(false));
+            }
+            catch
+            {
+            }
+        }
+        _showRequest.Set();
+        return false;
+    }
+
+    private static string InstanceKey()
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(
+            Path.GetFullPath(_dataDirectory).TrimEnd('\\', '/').ToLowerInvariant()));
+        return Convert.ToHexString(hash)[..16];
+    }
+
+    private static void StartShowRequestListener(CancellationToken cancellationToken)
+    {
+        EventWaitHandle? handle = _showRequest;
+        if (handle is null)
+            return;
+
+        var thread = new Thread(() =>
+        {
+            var handles = new[] { handle, cancellationToken.WaitHandle };
+            while (WaitHandle.WaitAny(handles) == 0)
+            {
+                ProcessPendingUrls();
+                ShowRequested?.Invoke();
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "TabBouncer show request"
+        };
+        thread.Start();
+    }
+
+    private static void ProcessPendingUrls()
+    {
+        string processing = PendingUrlPath + ".processing";
+        try
+        {
+            if (!File.Exists(PendingUrlPath))
+                return;
+            File.Move(PendingUrlPath, processing, true);
+            foreach (string line in File.ReadAllLines(processing, Encoding.UTF8))
+            {
+                if (!string.IsNullOrWhiteSpace(line))
+                    OpenUrl(line.Trim());
+            }
+            File.Delete(processing);
+        }
+        catch (Exception ex)
+        {
+            Warning("다른 실행에서 넘긴 주소를 읽지 못했다: " + ex.Message);
+        }
     }
 
     private static async Task RunEngineAsync(CancellationToken cancellationToken)
@@ -557,7 +221,7 @@ internal static class Program
         {
             try
             {
-                SetConnectionState(false, "Chrome 연결 중");
+                SetConnectionState(false, L.T("status.connecting"));
                 await RunSessionAsync(allowLaunch, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -582,7 +246,7 @@ internal static class Program
             }
         }
 
-        SetConnectionState(false, "종료됨");
+        SetConnectionState(false, L.T("status.stopped"));
         Info("종료한다.");
     }
 
@@ -596,8 +260,7 @@ internal static class Program
         {
             while (true)
             {
-                if (await ProbeBrowserWebSocketAsync(_config.DebugPort, cancellationToken)
-                        .ConfigureAwait(false) is not null)
+                if (await ProbeOwnBrowserAsync(cancellationToken).ConfigureAwait(false) is not null)
                 {
                     ChromeLaunchRequests.Wait(0);
                     return false;
@@ -607,8 +270,9 @@ internal static class Program
                 {
                     announced = true;
                     _waitingForChrome = true;
-                    SetConnectionState(false, "Chrome 닫힘");
+                    SetConnectionState(false, L.T("status.chromeClosed"));
                     Info("전용 Chrome이 실행 중이 아니다. 'Chrome 열기'를 누르면 다시 연다.");
+                    PushStateToGuide();
                 }
 
                 if (await ChromeLaunchRequests.WaitAsync(5000, cancellationToken).ConfigureAwait(false))
@@ -621,6 +285,15 @@ internal static class Program
         }
     }
 
+    private static string? UrlArgument(IEnumerable<string> args)
+    {
+        const string prefix = "--url=";
+        string? argument = args.LastOrDefault(value =>
+            value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        return argument is null ? null : Config.NormalizeUrl(argument[prefix.Length..].Trim('"'));
+    }
+
+    // 실행할 때 한 번만 적용하는 인수다. 설정을 다시 읽을 때는 ApplyPersistentArguments만 다시 적용한다.
     private static void ApplyArguments(IEnumerable<string> args)
     {
         foreach (string argument in args)
@@ -629,18 +302,32 @@ internal static class Program
                 _config.DryRun = false;
             else if (argument.Equals("--dry-run", StringComparison.OrdinalIgnoreCase))
                 _config.DryRun = true;
-            else if (argument.Equals("--strict", StringComparison.OrdinalIgnoreCase))
+            else if (argument.Equals("--auto-start", StringComparison.OrdinalIgnoreCase))
+                _config.Enabled = true;
+            else if (argument.Equals("--minimized", StringComparison.OrdinalIgnoreCase))
+                StartMinimized = true;
+        }
+
+        _startUrlFromArgument = UrlArgument(args) ?? "";
+        ApplyPersistentArguments(args);
+    }
+
+    // 설정 파일을 다시 읽어도 명령줄로 지정한 포트·시작 주소·판정 옵션은 유지한다.
+    private static void ApplyPersistentArguments(IEnumerable<string> args)
+    {
+        foreach (string argument in args)
+        {
+            if (argument.Equals("--strict", StringComparison.OrdinalIgnoreCase))
                 _config.StrictMode = true;
             else if (argument.Equals("--no-preempt", StringComparison.OrdinalIgnoreCase))
                 _config.PreemptiveBlock = false;
-            else if (argument.Equals("--auto-start", StringComparison.OrdinalIgnoreCase))
-                _config.Enabled = true;
             else if (argument.StartsWith("--port=", StringComparison.OrdinalIgnoreCase) &&
                      int.TryParse(argument[7..], out int port))
                 _config.DebugPort = port;
-            else if (argument.StartsWith("--url=", StringComparison.OrdinalIgnoreCase))
-                _config.StartUrl = argument[6..];
         }
+
+        if (UrlArgument(args) is { Length: > 0 } url)
+            _config.StartUrl = url;
     }
 
     private static void ApplyDataDirectoryArgument(IEnumerable<string> args)
@@ -655,13 +342,13 @@ internal static class Program
         if (string.IsNullOrWhiteSpace(path))
             throw new ArgumentException("--data-dir 경로가 비어 있다.");
         _dataDirectory = Path.GetFullPath(path);
-        _configDirectory = _dataDirectory;
+        _dataDirectoryFromArgument = true;
     }
 
     private static async Task RunSessionAsync(bool allowLaunch, CancellationToken cancellationToken)
     {
-        string? webSocketUrl = await ProbeBrowserWebSocketAsync(
-            _config.DebugPort, cancellationToken).ConfigureAwait(false);
+        string? webSocketUrl = await ProbeOwnBrowserAsync(cancellationToken).ConfigureAwait(false);
+        bool launched = false;
 
         if (webSocketUrl is null)
         {
@@ -669,11 +356,11 @@ internal static class Program
                 return;
 
             LaunchChrome();
+            launched = true;
             for (int attempt = 0; attempt < 40 && webSocketUrl is null; attempt++)
             {
                 await Task.Delay(500, cancellationToken).ConfigureAwait(false);
-                webSocketUrl = await ProbeBrowserWebSocketAsync(
-                    _config.DebugPort, cancellationToken).ConfigureAwait(false);
+                webSocketUrl = await ProbeOwnBrowserAsync(cancellationToken).ConfigureAwait(false);
             }
 
             if (webSocketUrl is null)
@@ -691,6 +378,7 @@ internal static class Program
         while (GlobalIntents.TryDequeue(out _))
         {
         }
+        _isolatedWorldWarningShown = false;
 
         await using var client = new CdpClient();
         _cdp = client;
@@ -700,15 +388,16 @@ internal static class Program
         client.Closed += exception =>
         {
             string detail = exception is null ? "" : " (" + exception.Message + ")";
-            SetConnectionState(false, "Chrome 연결 끊김");
+            SetConnectionState(false, L.T("status.disconnected"));
             Warning("Chrome 연결이 끊어졌다." + detail);
             disconnected.TrySetResult(true);
         };
         client.EventReceived += OnCdpEvent;
 
         await client.ConnectAsync(webSocketUrl, cancellationToken).ConfigureAwait(false);
-        Success("Chrome에 연결했다.");
-        SetConnectionState(true, "Chrome 연결됨");
+        await ReadBrowserVersionAsync(client).ConfigureAwait(false);
+        Success("Chrome에 연결했다." + (_browserVersion.Length > 0 ? " (" + _browserVersion + ")" : ""));
+        SetConnectionState(true, L.T("status.connected"));
 
         await client.SendAsync(
             "Target.setDiscoverTargets",
@@ -732,497 +421,27 @@ internal static class Program
             ? "선차단과 사용자 클릭 추적을 시작했다."
             : "사용자 클릭 추적을 시작했다.");
 
+        if (!launched && _startUrlFromArgument.Length > 0)
+            PendingOpenUrls.Enqueue(_startUrlFromArgument);
+        _startUrlFromArgument = "";
+        OpenPendingUrls();
+
         using (cancellationToken.Register(() => disconnected.TrySetResult(true)))
             await disconnected.Task.ConfigureAwait(false);
 
         _cdp = null;
     }
 
-    private static async Task<string?> ProbeBrowserWebSocketAsync(
-        int port,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            string json = await http.GetStringAsync(
-                $"http://127.0.0.1:{port}/json/version", cancellationToken).ConfigureAwait(false);
-            return JsonNode.Parse(json)?["webSocketDebuggerUrl"]?.GetValue<string>();
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static void LaunchChrome()
-    {
-        string chrome = ResolveChromePath();
-        string profile = string.IsNullOrWhiteSpace(_config.UserDataDir)
-            ? Path.Combine(_dataDirectory, "ChromeProfile")
-            : Environment.ExpandEnvironmentVariables(_config.UserDataDir);
-        Directory.CreateDirectory(profile);
-
-        var startInfo = new ProcessStartInfo(chrome)
-        {
-            UseShellExecute = false
-        };
-        startInfo.ArgumentList.Add($"--remote-debugging-port={_config.DebugPort}");
-        startInfo.ArgumentList.Add("--remote-debugging-address=127.0.0.1");
-        startInfo.ArgumentList.Add($"--user-data-dir={profile}");
-        startInfo.ArgumentList.Add("--no-first-run");
-        startInfo.ArgumentList.Add("--no-default-browser-check");
-        foreach (string argument in _config.ChromeArguments.Where(value =>
-                     !string.IsNullOrWhiteSpace(value)))
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-        string startUrl = string.IsNullOrWhiteSpace(_config.StartUrl)
-            ? WriteGuidePage()
-            : _config.StartUrl;
-        if (!string.IsNullOrWhiteSpace(startUrl))
-            startInfo.ArgumentList.Add(startUrl);
-
-        Info("Chrome을 실행한다: " + chrome);
-        Info("전용 프로필: " + profile);
-        Process.Start(startInfo);
-    }
-
-    private static string GuidePagePath => Path.Combine(_dataDirectory, "start.html");
-    private static string GuidePageUrl => new Uri(GuidePagePath).AbsoluteUri;
-
-    private static string WriteGuidePage()
-    {
-        try
-        {
-            string html = GuidePageHtml.Replace("{{MONITORING}}", _config.Enabled ? "true" : "false");
-            File.WriteAllText(GuidePagePath, html, new UTF8Encoding(false));
-            return GuidePageUrl;
-        }
-        catch (Exception ex)
-        {
-            Warning("안내 페이지를 만들지 못했다: " + ex.Message);
-            return "";
-        }
-    }
-
-    // 안내 페이지는 파일이라 감시 상태를 스스로 알 수 없다. 페이지 로드와 감시 전환 때마다 CDP로 알려준다.
-    private static void PushMonitoringStateToGuide(string? sessionId = null)
+    private static void OpenPendingUrls()
     {
         CdpClient? client = _cdp;
         if (client is null)
             return;
-
-        string guideUrl = GuidePageUrl;
-        string value = _config.Enabled ? "true" : "false";
-        foreach (TargetRecord target in Targets.Values)
+        while (PendingOpenUrls.TryDequeue(out string? url))
         {
-            if (target.SessionId is not { } targetSession ||
-                (sessionId is not null && targetSession != sessionId) ||
-                !target.Url.StartsWith(guideUrl, StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            client.Fire(
-                "Runtime.evaluate",
-                new JsonObject
-                {
-                    ["expression"] =
-                        $"window.__tabBouncerMonitoring = {value}; window.__tabBouncerSetMonitoring?.({value});"
-                },
-                targetSession);
+            client.Fire("Target.createTarget", new JsonObject { ["url"] = url, ["newWindow"] = false });
+            Info("전용 Chrome에서 주소를 열었다: " + Shorten(url));
         }
-    }
-
-    private static string ResolveChromePath()
-    {
-        string configured = Environment.ExpandEnvironmentVariables(_config.ChromePath);
-        if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
-            return configured;
-
-        string[] candidates =
-        {
-            Path.Combine(Environment.GetEnvironmentVariable("ProgramFiles") ?? "",
-                @"Google\Chrome\Application\chrome.exe"),
-            Path.Combine(Environment.GetEnvironmentVariable("ProgramFiles(x86)") ?? "",
-                @"Google\Chrome\Application\chrome.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                @"Google\Chrome\Application\chrome.exe")
-        };
-
-        foreach (string candidate in candidates)
-        {
-            if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
-                return candidate;
-        }
-
-        throw new FileNotFoundException(
-            "chrome.exe를 찾지 못했다. config.json의 chromePath에 경로를 지정해야 한다.");
-    }
-
-    private static void OnCdpEvent(string method, JsonNode? parameters, string? sessionId)
-    {
-        try
-        {
-            switch (method)
-            {
-                case "Target.targetCreated":
-                case "Target.targetInfoChanged":
-                    HandleTargetInfo(method, parameters?["targetInfo"]);
-                    break;
-
-                case "Target.attachedToTarget":
-                    HandleAttachedTarget(parameters);
-                    break;
-
-                case "Runtime.bindingCalled":
-                    HandleIntentBinding(parameters, sessionId);
-                    break;
-
-                case "Page.frameRequestedNavigation":
-                    HandleFrameRequestedNavigation(parameters, sessionId);
-                    break;
-
-                case "Page.frameNavigated":
-                    HandleFrameNavigated(parameters, sessionId);
-                    break;
-
-                case "Page.loadEventFired":
-                    PushMonitoringStateToGuide(sessionId);
-                    break;
-
-                case "Network.requestWillBeSent":
-                    HandleDocumentRequest(parameters, sessionId);
-                    break;
-
-                case "Target.targetDestroyed":
-                    HandleTargetDestroyed(parameters);
-                    break;
-
-                case "Target.detachedFromTarget":
-                    HandleDetachedTarget(parameters);
-                    break;
-            }
-        }
-        catch (Exception ex)
-        {
-            Error($"CDP 이벤트 처리 오류({method}): {ex.Message}");
-        }
-    }
-
-    private static void HandleTargetInfo(string method, JsonNode? targetInfo)
-    {
-        if (targetInfo is null || targetInfo["targetId"] is null)
-            return;
-
-        string targetId = targetInfo["targetId"]!.GetValue<string>();
-        var target = Targets.GetOrAdd(
-            targetId,
-            static id => new TargetRecord { TargetId = id });
-        target.Type = targetInfo["type"]?.GetValue<string>() ?? "";
-
-        string url = targetInfo["url"]?.GetValue<string>() ?? "";
-        if (!string.IsNullOrEmpty(url))
-            target.Url = url;
-
-        string? openerId = targetInfo["openerId"]?.GetValue<string>();
-        if (!string.IsNullOrEmpty(openerId))
-            target.OpenerId = openerId;
-
-        if (!target.Type.Equals("page", StringComparison.Ordinal))
-            return;
-
-        var page = Pages.GetOrAdd(
-            targetId,
-            _ => new PageContext
-            {
-                TargetId = targetId,
-                OpenerId = target.OpenerId,
-                InitialUrl = target.Url,
-                CreatedAt = Now
-            });
-        page.OpenerId ??= target.OpenerId;
-
-        if (method == "Target.targetInfoChanged" && !IsBlank(target.Url))
-            _ = EvaluateAsync(page, "targetInfoChanged");
-    }
-
-    private static void AdoptExistingPage(JsonNode? targetInfo)
-    {
-        if (targetInfo?["targetId"] is null ||
-            !string.Equals(targetInfo["type"]?.GetValue<string>(), "page", StringComparison.Ordinal))
-            return;
-
-        HandleTargetInfo("Target.targetCreated", targetInfo);
-        if (!Pages.TryGetValue(targetInfo["targetId"]!.GetValue<string>(), out var page))
-            return;
-
-        Interlocked.Exchange(ref page.Decided, 1);
-        string url = targetInfo["url"]?.GetValue<string>() ?? "";
-        if (!IsInternal(url))
-            page.CommittedUrl = url;
-    }
-
-    private static void HandleAttachedTarget(JsonNode? parameters)
-    {
-        JsonNode? targetInfo = parameters?["targetInfo"];
-        string? sessionId = parameters?["sessionId"]?.GetValue<string>();
-        if (targetInfo is null || string.IsNullOrEmpty(sessionId) || targetInfo["targetId"] is null)
-            return;
-
-        string targetId = targetInfo["targetId"]!.GetValue<string>();
-        string type = targetInfo["type"]?.GetValue<string>() ?? "";
-        string url = targetInfo["url"]?.GetValue<string>() ?? "";
-        string? openerId = targetInfo["openerId"]?.GetValue<string>();
-        bool waiting = parameters?["waitingForDebugger"]?.GetValue<bool>() ?? false;
-
-        var target = Targets.GetOrAdd(
-            targetId,
-            static id => new TargetRecord { TargetId = id });
-        target.Type = type;
-        target.SessionId = sessionId;
-        if (!string.IsNullOrEmpty(url))
-            target.Url = url;
-        if (!string.IsNullOrEmpty(openerId))
-            target.OpenerId = openerId;
-        TargetsBySession[sessionId] = targetId;
-
-        if (!type.Equals("page", StringComparison.Ordinal))
-        {
-            if (waiting)
-                Resume(sessionId);
-            return;
-        }
-
-        var page = Pages.GetOrAdd(
-            targetId,
-            _ => new PageContext
-            {
-                TargetId = targetId,
-                OpenerId = target.OpenerId,
-                InitialUrl = target.Url,
-                CreatedAt = Now
-            });
-        page.OpenerId ??= target.OpenerId;
-        if (waiting)
-        {
-            page.PausedSessionId = sessionId;
-            page.PausedAt = Now;
-        }
-
-        _ = InitializeAttachedPageAsync(page, sessionId, waiting);
-    }
-
-    private static async Task InitializeAttachedPageAsync(
-        PageContext page,
-        string sessionId,
-        bool waiting)
-    {
-        try
-        {
-            CdpClient? client = _cdp;
-            if (client is null)
-                return;
-
-            if (waiting)
-            {
-                // 클릭 이벤트와 새 Target 이벤트는 서로 다른 CDP 세션에서 올 수 있다.
-                // 아주 짧은 유예를 둬 클릭 의도가 먼저 기록되도록 한다.
-                await Task.Delay(150).ConfigureAwait(false);
-                bool closed = await EvaluateAsync(page, "preempt").ConfigureAwait(false);
-                Resume(sessionId);
-                page.PausedSessionId = null;
-                if (closed)
-                    return;
-            }
-
-            await client.SendAsync("Runtime.enable", null, sessionId, 1500).ConfigureAwait(false);
-            await client.SendAsync(
-                "Runtime.addBinding",
-                new JsonObject { ["name"] = IntentBindingName },
-                sessionId,
-                1500).ConfigureAwait(false);
-            await client.SendAsync("Page.enable", null, sessionId, 1500).ConfigureAwait(false);
-            await client.SendAsync("Network.enable", null, sessionId, 1500).ConfigureAwait(false);
-            await client.SendAsync(
-                "Page.addScriptToEvaluateOnNewDocument",
-                new JsonObject { ["source"] = ClickTrackerScript },
-                sessionId,
-                1500).ConfigureAwait(false);
-
-            client.Fire(
-                "Runtime.evaluate",
-                new JsonObject
-                {
-                    ["expression"] = ClickTrackerScript,
-                    ["returnByValue"] = false
-                },
-                sessionId);
-            PushMonitoringStateToGuide(sessionId);
-        }
-        catch (Exception ex)
-        {
-            Warning("페이지 감시 초기화 실패: " + ex.Message);
-        }
-        finally
-        {
-            if (page.PausedSessionId is not null)
-            {
-                Resume(sessionId);
-                page.PausedSessionId = null;
-            }
-        }
-    }
-
-    private static void HandleIntentBinding(JsonNode? parameters, string? sessionId)
-    {
-        if (!_config.ProtectExplicitClicks || string.IsNullOrEmpty(sessionId))
-            return;
-        if (!string.Equals(
-                parameters?["name"]?.GetValue<string>(),
-                IntentBindingName,
-                StringComparison.Ordinal))
-            return;
-        if (!TargetsBySession.TryGetValue(sessionId, out string? targetId))
-            return;
-
-        string payload = parameters?["payload"]?.GetValue<string>() ?? "";
-        JsonNode? value;
-        try
-        {
-            value = JsonNode.Parse(payload);
-        }
-        catch (JsonException)
-        {
-            return;
-        }
-
-        if (value is null)
-            return;
-
-        var intent = new UserIntent(
-            targetId,
-            value["kind"]?.GetValue<string>() ?? "passive",
-            value["url"]?.GetValue<string>() ?? "",
-            value["pageUrl"]?.GetValue<string>() ?? "",
-            value["label"]?.GetValue<string>() ?? "",
-            value["opensNewContext"]?.GetValue<bool>() ?? false,
-            Now);
-
-        ConcurrentQueue<UserIntent> queue = Intents.GetOrAdd(
-            targetId, static _ => new ConcurrentQueue<UserIntent>());
-        queue.Enqueue(intent);
-        GlobalIntents.Enqueue(intent);
-        PruneIntentQueue(queue, Now);
-        PruneIntentQueue(GlobalIntents, Now);
-    }
-
-    private static void HandleFrameNavigated(JsonNode? parameters, string? sessionId)
-    {
-        JsonNode? frame = parameters?["frame"];
-        if (frame is null || frame["parentId"] is not null || string.IsNullOrEmpty(sessionId))
-            return;
-        if (!TargetsBySession.TryGetValue(sessionId, out string? targetId))
-            return;
-
-        string url = frame["url"]?.GetValue<string>() ?? "";
-        if (IsBlank(url))
-            return;
-
-        if (Targets.TryGetValue(targetId, out var target))
-            target.Url = url;
-        if (Pages.TryGetValue(targetId, out var page))
-        {
-            page.Redirects++;
-            bool pageInitiated = page.PageNavigationRequestedAt != 0 &&
-                                 Now - page.PageNavigationRequestedAt <= 10000;
-            page.PageNavigationRequestedAt = 0;
-            _ = EvaluateAsync(page, "frameNavigated");
-            // 이미 유지하기로 결정된(Decided != 0) 탭도 자체 하이재킹 검사는 매번 새로 받아야 한다.
-            // 그렇지 않으면 최초 로드 때 통과한 탭이 나중에 광고 사이트로 리다이렉트돼도 영원히 무시된다.
-            _ = EvaluateRedirectHijackAsync(page, sessionId, url, pageInitiated);
-        }
-    }
-
-    // Chrome은 페이지(스크립트·링크·meta refresh)가 시작한 이동에만 이 이벤트를 보낸다.
-    // 주소창 입력·북마크·뒤로 가기 같은 브라우저 주도 이동에는 오지 않으므로 둘을 구분하는 근거로 쓴다.
-    private static void HandleFrameRequestedNavigation(JsonNode? parameters, string? sessionId)
-    {
-        if (string.IsNullOrEmpty(sessionId) ||
-            !TargetsBySession.TryGetValue(sessionId, out string? targetId))
-            return;
-        if (!string.Equals(parameters?["frameId"]?.GetValue<string>(), targetId, StringComparison.Ordinal) ||
-            !string.Equals(parameters?["disposition"]?.GetValue<string>(), "currentTab", StringComparison.Ordinal))
-            return;
-        if (Pages.TryGetValue(targetId, out var page))
-            page.PageNavigationRequestedAt = Now;
-    }
-
-    private static void HandleDocumentRequest(JsonNode? parameters, string? sessionId)
-    {
-        if (string.IsNullOrEmpty(sessionId) ||
-            !string.Equals(parameters?["type"]?.GetValue<string>(), "Document",
-                StringComparison.Ordinal) ||
-            !TargetsBySession.TryGetValue(sessionId, out string? targetId))
-        {
-            return;
-        }
-
-        string frameId = parameters?["frameId"]?.GetValue<string>() ?? "";
-        string requestId = parameters?["requestId"]?.GetValue<string>() ?? "";
-        string loaderId = parameters?["loaderId"]?.GetValue<string>() ?? "";
-        bool looksLikeMainDocument = frameId.Equals(targetId, StringComparison.Ordinal) ||
-                                     (requestId.Length > 0 &&
-                                      requestId.Equals(loaderId, StringComparison.Ordinal));
-        if (!looksLikeMainDocument)
-            return;
-
-        string url = parameters?["request"]?["url"]?.GetValue<string>() ?? "";
-        if (IsBlank(url) || !Pages.TryGetValue(targetId, out var page))
-            return;
-
-        if (parameters?["redirectResponse"] is not null)
-            page.Redirects++;
-
-        IntentAssessment intent = AssessIntent(page, url);
-        if (intent.Approved)
-        {
-            page.UserApproved = true;
-            page.ApprovalReason = intent.Reason;
-        }
-
-        if (Targets.TryGetValue(targetId, out var target))
-            target.Url = url;
-        _ = EvaluateAsync(page, "documentRequest");
-    }
-
-    private static void HandleTargetDestroyed(JsonNode? parameters)
-    {
-        string? targetId = parameters?["targetId"]?.GetValue<string>();
-        if (string.IsNullOrEmpty(targetId))
-            return;
-
-        if (Targets.TryRemove(targetId, out var target) && target.SessionId is not null)
-            TargetsBySession.TryRemove(target.SessionId, out _);
-        Pages.TryRemove(targetId, out _);
-        Intents.TryRemove(targetId, out _);
-    }
-
-    private static void HandleDetachedTarget(JsonNode? parameters)
-    {
-        string? sessionId = parameters?["sessionId"]?.GetValue<string>();
-        if (string.IsNullOrEmpty(sessionId))
-            return;
-
-        if (TargetsBySession.TryRemove(sessionId, out string? targetId) &&
-            Targets.TryGetValue(targetId, out var target))
-        {
-            target.SessionId = null;
-        }
-    }
-
-    private static void Resume(string sessionId)
-    {
-        _cdp?.Fire("Runtime.runIfWaitingForDebugger", null, sessionId);
     }
 
     private static async Task SweepAsync(CancellationToken cancellationToken)
@@ -1263,982 +482,9 @@ internal static class Program
         }
     }
 
-    private static void PruneIntentQueue(ConcurrentQueue<UserIntent> queue, long now)
-    {
-        long retention = Math.Max(_config.IntentWindowMs * 2L, 10000L);
-        while (queue.TryPeek(out UserIntent? oldest) && now - oldest.ReceivedAt > retention)
-            queue.TryDequeue(out _);
-    }
-
-    private static async Task<bool> EvaluateAsync(PageContext page, string stage)
-    {
-        CdpClient? client = _cdp;
-        if (!_config.Enabled || client is null || page.Decided != 0)
-            return false;
-
-        string url = Targets.TryGetValue(page.TargetId, out var current)
-            ? current.Url
-            : page.InitialUrl;
-        string openerUrl = page.OpenerId is not null &&
-                           Targets.TryGetValue(page.OpenerId, out var opener)
-            ? opener.Url
-            : "";
-
-        IntentAssessment intent = AssessIntent(page, url);
-        if (intent.Approved)
-        {
-            page.UserApproved = true;
-            page.ApprovalReason = intent.Reason;
-        }
-
-        if (stage == "debounce" && !page.WindowChecked)
-        {
-            page.WindowChecked = true;
-            try
-            {
-                JsonNode? result = await client.SendAsync(
-                    "Browser.getWindowForTarget",
-                    new JsonObject { ["targetId"] = page.TargetId },
-                    null,
-                    1500).ConfigureAwait(false);
-                JsonNode? bounds = result?["bounds"];
-                int width = bounds?["width"]?.GetValue<int>() ?? 0;
-                int height = bounds?["height"]?.GetValue<int>() ?? 0;
-                page.PopupLikely = width > 0 && height > 0 && (width < 1000 || height < 780);
-            }
-            catch
-            {
-            }
-        }
-
-        (int score, string reason) = Score(url, openerUrl, page, intent, _config);
-
-        if (score <= -900)
-        {
-            if (intent.Approved ||
-                (stage == "debounce" && reason != "blank-pending"))
-                Interlocked.Exchange(ref page.Decided, 1);
-
-            if (intent.Approved)
-            {
-                Info($"사용자 요청 탭 유지 [{intent.Reason}] {Shorten(url)}");
-                WriteEvent(new
-                {
-                    stage = "user-approved",
-                    url,
-                    openerUrl,
-                    reason = intent.Reason
-                });
-            }
-            return false;
-        }
-
-        if (score >= _config.CloseThreshold - 30)
-        {
-            WriteEvent(new
-            {
-                stage,
-                score,
-                reason,
-                url,
-                openerUrl,
-                initialUrl = page.InitialUrl,
-                page.PopupLikely,
-                page.Redirects,
-                intent = intent.Reason,
-                ageMs = Now - page.CreatedAt
-            });
-        }
-
-        if (score < _config.CloseThreshold)
-        {
-            if (stage == "debounce")
-                Interlocked.Exchange(ref page.Decided, 1);
-            if (score >= _config.CloseThreshold - 30)
-                Info($"유지 {score}점 [{reason}] {Shorten(url)}");
-            return false;
-        }
-
-        if (Interlocked.Exchange(ref page.Decided, 1) != 0)
-            return false;
-
-        if (_config.DryRun)
-        {
-            Warning($"[DRY-RUN] 종료 대상 {score}점 [{reason}] {Shorten(url)}");
-            return false;
-        }
-
-        int normalPages = Targets.Values.Count(target =>
-            target.Type == "page" && !IsInternal(target.Url));
-        if (normalPages <= 1)
-        {
-            Warning("마지막 일반 탭이므로 종료하지 않는다: " + Shorten(url));
-            return false;
-        }
-
-        try
-        {
-            await client.SendAsync(
-                "Target.closeTarget",
-                new JsonObject { ["targetId"] = page.TargetId },
-                null,
-                3000).ConfigureAwait(false);
-
-            lock (RecentClosed)
-            {
-                RecentClosed.Insert(0, new ClosedItem(
-                    url, openerUrl, score, reason, DateTime.Now));
-                if (RecentClosed.Count > 20)
-                    RecentClosed.RemoveRange(20, RecentClosed.Count - 20);
-            }
-
-            Success($"자동 광고 탭 종료 {score}점 [{reason}] {Shorten(url)}");
-            WriteEvent(new { stage = "closed", score, reason, url, openerUrl });
-
-            if (_config.RefocusOpener && page.OpenerId is not null)
-            {
-                client.Fire(
-                    "Target.activateTarget",
-                    new JsonObject { ["targetId"] = page.OpenerId });
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Error("탭 종료 실패: " + ex.Message);
-            return false;
-        }
-    }
-
-    private static async Task EvaluateRedirectHijackAsync(
-        PageContext page,
-        string sessionId,
-        string newUrl,
-        bool pageInitiated)
-    {
-        if (IsInternal(newUrl))
-            return;
-
-        string trustedUrl = page.CommittedUrl;
-        CdpClient? client = _cdp;
-        // 감시가 꺼져 있을 때도 기준 URL은 따라가야 다시 켰을 때 엉뚱한 페이지로 되돌리지 않는다.
-        if (!pageInitiated || IsBlank(trustedUrl) ||
-            trustedUrl.Equals(newUrl, StringComparison.OrdinalIgnoreCase) ||
-            !_config.Enabled || !_config.BlockRedirectHijack || client is null)
-        {
-            page.CommittedUrl = newUrl;
-            return;
-        }
-
-        IntentAssessment intent = AssessSameTabIntent(page, newUrl);
-        (int score, string reason) = ScoreRedirectHijack(trustedUrl, newUrl, intent, _config);
-
-        if (score < _config.CloseThreshold)
-        {
-            page.CommittedUrl = newUrl;
-            return;
-        }
-
-        if (_config.DryRun)
-        {
-            Warning($"[DRY-RUN] 리다이렉트 차단 대상 {score}점 [{reason}] {Shorten(newUrl)}");
-            WriteEvent(new { stage = "redirect-dry-run", score, reason, url = newUrl, restoredUrl = trustedUrl });
-            page.CommittedUrl = newUrl;
-            return;
-        }
-
-        bool repeating = page.RevertedFromUrl.Equals(trustedUrl, StringComparison.OrdinalIgnoreCase) &&
-                         Now - page.RevertedAt < 30000;
-        int attempts = repeating ? page.RevertCount : 0;
-        if (attempts >= 2)
-        {
-            // 되돌린 페이지가 스스로 다시 이동하면 무한 반복된다. 두 번 막은 뒤에는 이동을 허용한다.
-            Warning($"같은 페이지에서 리다이렉트가 반복돼 더 막지 않는다 {score}점 [{reason}] {Shorten(newUrl)}");
-            page.RevertedFromUrl = "";
-            page.RevertCount = 0;
-            page.CommittedUrl = newUrl;
-            return;
-        }
-
-        page.RevertedFromUrl = trustedUrl;
-        page.RevertedAt = Now;
-        page.RevertCount = attempts + 1;
-
-        try
-        {
-            await client.SendAsync(
-                "Page.navigate",
-                new JsonObject { ["url"] = trustedUrl },
-                sessionId,
-                3000).ConfigureAwait(false);
-
-            lock (RecentClosed)
-            {
-                RecentClosed.Insert(0, new ClosedItem(newUrl, trustedUrl, score, reason, DateTime.Now));
-                if (RecentClosed.Count > 20)
-                    RecentClosed.RemoveRange(20, RecentClosed.Count - 20);
-            }
-
-            Success($"광고 리다이렉트 차단, 이전 페이지로 복귀 {score}점 [{reason}] {Shorten(newUrl)}");
-            WriteEvent(new { stage = "redirect-blocked", score, reason, url = newUrl, restoredUrl = trustedUrl });
-        }
-        catch (Exception ex)
-        {
-            page.CommittedUrl = newUrl;
-            Error("리다이렉트 복구 실패: " + ex.Message);
-        }
-    }
-
-    private static IntentAssessment AssessSameTabIntent(PageContext page, string destinationUrl)
-    {
-        if (!_config.ProtectExplicitClicks)
-            return IntentAssessment.Neutral("click-protection-off");
-
-        long now = Now;
-        IEnumerable<UserIntent> candidates = Intents.TryGetValue(page.TargetId, out var own)
-            ? own.ToArray()
-            : Array.Empty<UserIntent>();
-
-        UserIntent[] recent = candidates
-            .Where(intent => now - intent.ReceivedAt >= 0 && now - intent.ReceivedAt <= _config.IntentWindowMs)
-            .OrderByDescending(intent => intent.ReceivedAt)
-            .ToArray();
-
-        return AssessRecentIntents(destinationUrl, recent);
-    }
-
-    private static (int Score, string Reason) ScoreRedirectHijack(
-        string fromUrl, string toUrl, IntentAssessment intent, Config config)
-    {
-        if (intent.Approved)
-            return (-999, "explicit-user-navigation");
-        if (IsBlank(fromUrl))
-            return (-999, "initial-load");
-
-        string fromHost = HostOf(fromUrl);
-        string toHost = HostOf(toUrl);
-        if (toHost.Length == 0)
-            return (-999, "no-host");
-        if (Matches(toHost, config.AllowedSites))
-            return (-999, "allowed-site");
-        if (Matches(toHost, config.Whitelist))
-            return (-999, "whitelist");
-        if (LooksLikeSensitiveFlow(toUrl))
-            return (-999, "sensitive-flow");
-        if (fromHost.Length > 0 &&
-            Etld1(toHost).Equals(Etld1(fromHost), StringComparison.OrdinalIgnoreCase))
-            return (-999, "same-site-navigation");
-
-        int score = 0;
-        var reasons = new List<string>();
-
-        Add(intent.Automatic, 80, intent.Reason);
-        Add(intent.Unexpected, 80, intent.Reason);
-        Add(Matches(toHost, config.AdDomains), 20, "ad-domain");
-        Add(fromHost.Length > 0 && Matches(fromHost, config.WatchedSites), 15, "watched-site-origin");
-        Add(config.SuspiciousTlds.Contains(TldOf(toHost), StringComparer.OrdinalIgnoreCase),
-            15, "suspicious-tld");
-
-        if (intent.UserControl)
-        {
-            score -= 60;
-            reasons.Add("clicked-control");
-        }
-
-        return (score, string.Join('+', reasons));
-
-        void Add(bool condition, int points, string reason)
-        {
-            if (!condition)
-                return;
-            score += points;
-            reasons.Add(reason);
-        }
-    }
-
-    private static IntentAssessment AssessIntent(PageContext page, string destinationUrl)
-    {
-        if (!_config.ProtectExplicitClicks)
-            return IntentAssessment.Neutral("click-protection-off");
-        if (page.UserApproved)
-            return IntentAssessment.Explicit(page.ApprovalReason);
-
-        long now = Now;
-        IEnumerable<UserIntent> candidates;
-        if (page.OpenerId is not null && Intents.TryGetValue(page.OpenerId, out var openerIntents))
-        {
-            candidates = openerIntents.ToArray();
-        }
-        else
-        {
-            candidates = GlobalIntents.ToArray();
-        }
-
-        UserIntent[] recent = candidates
-            .Where(intent => now - intent.ReceivedAt >= 0 &&
-                             now - intent.ReceivedAt <= _config.IntentWindowMs)
-            .OrderByDescending(intent => intent.ReceivedAt)
-            .ToArray();
-
-        return AssessRecentIntents(destinationUrl, recent);
-    }
-
-    private static IntentAssessment AssessRecentIntents(
-        string destinationUrl,
-        IReadOnlyList<UserIntent> recent)
-    {
-        if (recent.Count == 0)
-            return IntentAssessment.Auto("no-user-gesture");
-
-        // 이전 클릭이 다음 클릭을 오염시키지 않도록 가장 최근 제스처 하나만 본다.
-        UserIntent newest = recent[0];
-        if ((newest.Kind == "link" || newest.Kind == "form") &&
-            !string.IsNullOrWhiteSpace(newest.Url))
-        {
-            if (UrlMatchesIntent(newest.Url, destinationUrl))
-            {
-                string label = string.IsNullOrWhiteSpace(newest.Label)
-                    ? newest.Kind
-                    : newest.Label;
-                return IntentAssessment.Explicit("clicked:" + Shorten(label, 36));
-            }
-            return IntentAssessment.Mismatch("clicked-url-mismatch");
-        }
-
-        if (newest.Kind is "passive" or "passive-link")
-            return IntentAssessment.Mismatch("passive-click-popup");
-        if (newest.Kind == "control")
-            return IntentAssessment.Control("clicked-control");
-        return IntentAssessment.Neutral("recent-user-gesture");
-    }
-
-    private static (int Score, string Reason) Score(
-        string url,
-        string openerUrl,
-        PageContext page,
-        IntentAssessment intent,
-        Config config)
-    {
-        if (page.UserApproved || intent.Approved)
-            return (-999, "explicit-user-navigation");
-        if (string.IsNullOrWhiteSpace(url) || IsBlank(url))
-            return (-999, "blank-pending");
-        if (IsInternal(url))
-            return (-999, "internal");
-
-        string host = HostOf(url);
-        string openerHost = HostOf(openerUrl);
-        if (host.Length == 0)
-            return (-999, "no-host");
-        if (Matches(host, config.AllowedSites))
-            return (-999, "allowed-site");
-        if (Matches(host, config.Whitelist))
-            return (-999, "whitelist");
-        if (LooksLikeSensitiveFlow(url))
-            return (-999, "sensitive-flow");
-
-        bool adDomain = Matches(host, config.AdDomains);
-        bool watchedOpener = openerHost.Length > 0 && Matches(openerHost, config.WatchedSites);
-        bool hasOpener = openerHost.Length > 0;
-        bool crossSite = hasOpener &&
-                         !Etld1(host).Equals(Etld1(openerHost), StringComparison.OrdinalIgnoreCase);
-
-        if (!hasOpener && !adDomain)
-            return (-999, "no-opener");
-
-        bool automaticScope = config.BlockAutomaticCrossSitePopups &&
-                              crossSite && (intent.Automatic || intent.Unexpected);
-        if (!watchedOpener && !adDomain && !automaticScope && !config.StrictMode)
-            return (-999, "not-in-scope");
-
-        int score = 0;
-        var reasons = new List<string>();
-
-        Add(adDomain, 80, "ad-domain");
-        Add(watchedOpener, 45, "watched-opener");
-        Add(intent.Unexpected, 60, intent.Reason);
-        Add(intent.Automatic, 50, intent.Reason);
-        Add(crossSite, 25, "cross-site");
-
-        if (hasOpener && !crossSite)
-        {
-            score -= 35;
-            reasons.Add("same-site");
-        }
-
-        Add(page.PopupLikely, 15, "popup-window");
-        Add(openerHost.Length > 0 && Matches(openerHost, config.AdDomains), 20, "ad-chain");
-        Add(IsBlank(page.InitialUrl) && !IsBlank(url), 15, "blank-redirect");
-        Add(config.SuspiciousTlds.Contains(TldOf(host), StringComparer.OrdinalIgnoreCase),
-            15, "suspicious-tld");
-        Add(Now - page.CreatedAt < 1500, 10, "fast-open");
-        Add(page.Redirects >= 2, 10, "redirect-chain");
-
-        if (intent.UserControl)
-        {
-            score -= 40;
-            reasons.Add("clicked-control");
-        }
-
-        return (score, string.Join('+', reasons));
-
-        void Add(bool condition, int points, string reason)
-        {
-            if (!condition)
-                return;
-            score += points;
-            reasons.Add(reason);
-        }
-    }
-
-    private static bool UrlMatchesIntent(string intended, string actual)
-    {
-        if (!Uri.TryCreate(intended, UriKind.Absolute, out Uri? left) ||
-            !Uri.TryCreate(actual, UriKind.Absolute, out Uri? right))
-            return string.Equals(intended.TrimEnd('/'), actual.TrimEnd('/'),
-                StringComparison.OrdinalIgnoreCase);
-
-        if (!left.Scheme.Equals(right.Scheme, StringComparison.OrdinalIgnoreCase) ||
-            !left.Host.Equals(right.Host, StringComparison.OrdinalIgnoreCase) ||
-            left.Port != right.Port)
-            return false;
-
-        string leftPath = Uri.UnescapeDataString(left.AbsolutePath).TrimEnd('/');
-        string rightPath = Uri.UnescapeDataString(right.AbsolutePath).TrimEnd('/');
-        if (!leftPath.Equals(rightPath, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (string.IsNullOrEmpty(left.Query))
-            return true;
-        return left.Query.Equals(right.Query, StringComparison.Ordinal);
-    }
-
-    private static string HostOf(string raw)
-    {
-        return Uri.TryCreate(raw, UriKind.Absolute, out Uri? uri)
-            ? uri.IdnHost.ToLowerInvariant().TrimEnd('.')
-            : "";
-    }
-
-    private static readonly HashSet<string> CommonSecondLevelDomains =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "co", "com", "ne", "net", "or", "org", "go", "ac", "gov", "edu",
-            "pe", "re", "kg", "ms", "sc", "hs"
-        };
-
-    private static string Etld1(string host)
-    {
-        string[] parts = host.Split('.', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 3 && parts[^1].Length == 2 &&
-            CommonSecondLevelDomains.Contains(parts[^2]))
-        {
-            return string.Join('.', parts[^3..]);
-        }
-
-        return parts.Length >= 2 ? string.Join('.', parts[^2..]) : host;
-    }
-
-    private static string TldOf(string host)
-    {
-        int separator = host.LastIndexOf('.');
-        return separator < 0 ? "" : host[(separator + 1)..];
-    }
-
-    private static bool Matches(string host, IEnumerable<string> domains)
-    {
-        if (string.IsNullOrWhiteSpace(host))
-            return false;
-
-        foreach (string? item in domains)
-        {
-            string domain = (item ?? "").Trim().TrimStart('*', '.').ToLowerInvariant();
-            if (domain.Length == 0)
-                continue;
-            if (host.Equals(domain, StringComparison.OrdinalIgnoreCase) ||
-                host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
-
-    private static bool IsBlank(string url)
-    {
-        return string.IsNullOrWhiteSpace(url) ||
-               url.StartsWith("about:", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsInternal(string url)
-    {
-        return IsBlank(url) ||
-               url.StartsWith("chrome://", StringComparison.OrdinalIgnoreCase) ||
-               url.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase) ||
-               url.StartsWith("chrome-untrusted://", StringComparison.OrdinalIgnoreCase) ||
-               url.StartsWith("devtools://", StringComparison.OrdinalIgnoreCase) ||
-               url.StartsWith("edge://", StringComparison.OrdinalIgnoreCase) ||
-               url.StartsWith("file://", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool LooksLikeSensitiveFlow(string url)
-    {
-        string value = url.ToLowerInvariant();
-        return value.Contains("/oauth", StringComparison.Ordinal) ||
-               value.Contains("/authorize", StringComparison.Ordinal) ||
-               value.Contains("/signin", StringComparison.Ordinal) ||
-               value.Contains("/login", StringComparison.Ordinal) ||
-               value.Contains("/sso", StringComparison.Ordinal) ||
-               value.Contains("saml", StringComparison.Ordinal) ||
-               value.Contains("/checkout", StringComparison.Ordinal) ||
-               value.Contains("/payment", StringComparison.Ordinal);
-    }
-
-    private static string Shorten(string value, int maximum = 100)
-    {
-        return value.Length <= maximum ? value : value[..maximum] + "…";
-    }
-
-    // 감시 켜기/끄기는 GUI에서만 바꾼다. 설정 파일을 다시 읽어도 현재 감시 상태는 유지한다.
-    private static void LoadOrCreateConfig()
-    {
-        bool enabled = _config.Enabled;
-        try
-        {
-            if (!File.Exists(ConfigPath))
-            {
-                Config defaults = Config.Defaults();
-                defaults.Enabled = enabled;
-                _config = defaults;
-                SaveConfig();
-                return;
-            }
-
-            Config? loaded = JsonSerializer.Deserialize<Config>(
-                File.ReadAllText(ConfigPath, Encoding.UTF8), JsonOptions);
-            if (loaded is not null)
-            {
-                loaded.Enabled = enabled;
-                _config = loaded;
-            }
-        }
-        catch (Exception ex)
-        {
-            Error("설정을 읽지 못해 기본값을 사용한다: " + ex.Message);
-            Config defaults = Config.Defaults();
-            defaults.Enabled = enabled;
-            _config = defaults;
-        }
-    }
-
-    private static void SaveConfig()
-    {
-        try
-        {
-            Directory.CreateDirectory(_configDirectory);
-            File.WriteAllText(
-                ConfigPath,
-                JsonSerializer.Serialize(_config, JsonOptions),
-                new UTF8Encoding(false));
-        }
-        catch (Exception ex)
-        {
-            Error("설정 저장 실패: " + ex.Message);
-        }
-    }
-
-    private static void StartConfigWatcher()
-    {
-        try
-        {
-            _configWatcher = new FileSystemWatcher(_configDirectory, "config.json")
-            {
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size |
-                               NotifyFilters.FileName,
-                EnableRaisingEvents = true
-            };
-
-            long lastReload = 0;
-            FileSystemEventHandler reload = (_, _) =>
-            {
-                long now = Now;
-                if (now - Interlocked.Read(ref lastReload) < 500)
-                    return;
-                Interlocked.Exchange(ref lastReload, now);
-                _ = Task.Run(async () =>
-                {
-                    await Task.Delay(150).ConfigureAwait(false);
-                    LoadOrCreateConfig();
-                    Info("설정을 다시 읽었다.");
-                });
-            };
-            _configWatcher.Changed += reload;
-            _configWatcher.Created += reload;
-            _configWatcher.Renamed += (sender, eventArgs) => reload(sender, eventArgs);
-        }
-        catch (Exception ex)
-        {
-            Warning("설정 자동 다시 읽기를 시작하지 못했다: " + ex.Message);
-        }
-    }
-
-    private static void WriteEvent(object payload)
-    {
-        try
-        {
-            var record = new JsonObject
-            {
-                ["ts"] = DateTimeOffset.Now.ToString("O"),
-                ["data"] = JsonNode.Parse(JsonSerializer.Serialize(payload, JsonOptions))
-            };
-            lock (LogLock)
-            {
-                File.AppendAllText(
-                    EventLogPath,
-                    record.ToJsonString() + Environment.NewLine,
-                    new UTF8Encoding(false));
-            }
-        }
-        catch
-        {
-        }
-    }
-
-    private static void UndoLastClosed()
-    {
-        ClosedItem? item = null;
-        lock (RecentClosed)
-        {
-            if (RecentClosed.Count > 0)
-            {
-                item = RecentClosed[0];
-                RecentClosed.RemoveAt(0);
-            }
-        }
-
-        if (item is null)
-        {
-            Info("되돌릴 탭이 없다.");
-            return;
-        }
-
-        _cdp?.Fire(
-            "Target.createTarget",
-            new JsonObject { ["url"] = item.Url, ["newWindow"] = false });
-        Info("탭을 다시 열었다: " + Shorten(item.Url));
-    }
-
-    private static void AllowLastClosedSite()
-    {
-        string? host = null;
-        lock (RecentClosed)
-        {
-            if (RecentClosed.Count > 0)
-                host = HostOf(RecentClosed[0].Url);
-        }
-
-        if (string.IsNullOrEmpty(host))
-        {
-            Info("정상 사이트로 등록할 최근 탭이 없다.");
-            return;
-        }
-
-        string domain = Etld1(host);
-        if (_config.AllowedSites.Contains(domain, StringComparer.OrdinalIgnoreCase))
-        {
-            Info("이미 정상 사이트로 등록되어 있다: " + domain);
-            return;
-        }
-
-        _config.AllowedSites.Add(domain);
-        SaveConfig();
-        Success("정상 사이트로 등록했다: " + domain);
-    }
-
-    internal static AppSnapshot GetSnapshot()
-    {
-        int closedCount;
-        lock (RecentClosed)
-            closedCount = RecentClosed.Count;
-
-        string watched = _config.WatchedSites.Count == 0
-            ? "모든 사이트 자동 판정"
-            : string.Join(", ", _config.WatchedSites);
-
-        return new AppSnapshot(
-            _config.Enabled,
-            _config.DryRun,
-            _connected,
-            _connectionStatus,
-            _config.CloseThreshold,
-            closedCount,
-            watched,
-            _waitingForChrome);
-    }
-
-    internal static void RequestChromeLaunch()
-    {
-        if (!_waitingForChrome)
-            return;
-        try
-        {
-            ChromeLaunchRequests.Release();
-        }
-        catch (SemaphoreFullException)
-        {
-        }
-    }
-
-    internal static IReadOnlyList<ClosedItem> GetRecentClosed()
-    {
-        lock (RecentClosed)
-            return RecentClosed.ToArray();
-    }
-
-    internal static void ToggleMonitoring()
-    {
-        _config.Enabled = !_config.Enabled;
-        Info("감시 " + (_config.Enabled ? "재개" : "일시중지"));
-        PushMonitoringStateToGuide();
-    }
-
-    internal static void SetDryRun(bool enabled)
-    {
-        if (_config.DryRun == enabled)
-            return;
-
-        _config.DryRun = enabled;
-        Info("DRY-RUN " + (enabled ? "ON (관측만)" : "OFF (실제 종료)"));
-    }
-
-    internal static void ReloadConfig()
-    {
-        LoadOrCreateConfig();
-        Info("설정을 다시 적용했다.");
-    }
-
-    internal static void UndoLatest() => UndoLastClosed();
-
-    internal static void AllowLatestSite() => AllowLastClosedSite();
-
-    internal static string GetConfigPath() => ConfigPath;
-
-    internal static string ReadConfigText()
-    {
-        try
-        {
-            return File.Exists(ConfigPath) ? File.ReadAllText(ConfigPath, Encoding.UTF8) : "";
-        }
-        catch (Exception ex)
-        {
-            Error("설정 파일을 읽지 못했다: " + ex.Message);
-            return "";
-        }
-    }
-
-    internal static bool TrySaveConfigText(string json, out string error)
-    {
-        try
-        {
-            if (JsonSerializer.Deserialize<Config>(json, JsonOptions) is null)
-            {
-                error = "설정 내용이 비어 있다.";
-                return false;
-            }
-        }
-        catch (JsonException ex)
-        {
-            error = ex.Message;
-            return false;
-        }
-
-        try
-        {
-            Directory.CreateDirectory(_configDirectory);
-            File.WriteAllText(ConfigPath, json, new UTF8Encoding(false));
-        }
-        catch (Exception ex)
-        {
-            error = ex.Message;
-            return false;
-        }
-
-        error = "";
-        ReloadConfig();
-        return true;
-    }
-
     private static void SetConnectionState(bool connected, string status)
     {
         _connected = connected;
         _connectionStatus = status;
     }
-
-    private static int RunSelfTests()
-    {
-        int passed = 0;
-        Config config = Config.Defaults();
-        config.WatchedSites.Add("problem.example");
-        long now = Now;
-
-        Check("명시적으로 클릭한 광고 주소도 보호", () =>
-        {
-            var page = TestPage(now);
-            var intent = IntentAssessment.Explicit("clicked:광고 링크");
-            return Score("https://popads.net/a", "https://problem.example/", page, intent, config).Score <= -900;
-        });
-
-        Check("클릭한 링크와 다른 외부 탭은 종료", () =>
-        {
-            var page = TestPage(now);
-            var intent = IntentAssessment.Mismatch("clicked-url-mismatch");
-            return Score("https://unwanted.example/a", "https://problem.example/", page, intent, config).Score >= config.CloseThreshold;
-        });
-
-        Check("사용자 조작 버튼의 일반 외부 창은 보호", () =>
-        {
-            var page = TestPage(now);
-            var intent = IntentAssessment.Control("clicked-control");
-            return Score("https://tool.example/a", "https://problem.example/", page, intent, config).Score < config.CloseThreshold;
-        });
-
-        Check("버튼으로 열려도 등록된 광고 도메인은 종료", () =>
-        {
-            var page = TestPage(now);
-            var intent = IntentAssessment.Control("clicked-control");
-            return Score("https://incompetencesorting.com/x?key=1", "https://problem.example/", page, intent, config).Score >= config.CloseThreshold;
-        });
-
-        Check("사용자 동작 없는 외부 팝업은 종료", () =>
-        {
-            var page = TestPage(now);
-            var intent = IntentAssessment.Auto("no-user-gesture");
-            return Score("https://unknown.example/a", "https://ordinary.example/", page, intent, config).Score >= config.CloseThreshold;
-        });
-
-        Check("opener 없는 일반 탭은 보호", () =>
-        {
-            var page = TestPage(now);
-            var intent = IntentAssessment.Auto("no-user-gesture");
-            return Score("https://example.com/", "", page, intent, config).Score <= -900;
-        });
-
-        Check("로그인 흐름은 보호", () =>
-        {
-            var page = TestPage(now);
-            var intent = IntentAssessment.Auto("no-user-gesture");
-            return Score("https://identity.example/oauth/authorize", "https://problem.example/", page, intent, config).Score <= -900;
-        });
-
-        Check("등록한 정상 사이트의 하위 도메인 창도 보호", () =>
-        {
-            config.AllowedSites.Add("safe.example");
-            var page = TestPage(now);
-            var intent = IntentAssessment.Auto("no-user-gesture");
-            return Score("https://sub.safe.example/popup", "https://problem.example/", page, intent, config).Score <= -900;
-        });
-
-        Check("클릭 없이 현재 탭이 광고 사이트로 리다이렉트되면 차단", () =>
-        {
-            var intent = IntentAssessment.Auto("no-user-gesture");
-            return ScoreRedirectHijack(
-                "https://reader.example/chapter-1", "https://popads.net/x", intent, config).Score
-                >= config.CloseThreshold;
-        });
-
-        Check("전혀 다른 사이트로 위장한 리다이렉트도 차단", () =>
-        {
-            var intent = IntentAssessment.Mismatch("passive-click-popup");
-            return ScoreRedirectHijack(
-                "https://reader.example/chapter-1", "https://scam-casino.example/", intent, config).Score
-                >= config.CloseThreshold;
-        });
-
-        Check("버튼을 눌러 이동하는 현재 탭 리다이렉트는 보호", () =>
-        {
-            var intent = IntentAssessment.Control("clicked-control");
-            return ScoreRedirectHijack(
-                "https://reader.example/chapter-1", "https://partner.example/", intent, config).Score
-                < config.CloseThreshold;
-        });
-
-        Check("로그인 등 민감한 흐름으로의 리다이렉트는 보호", () =>
-        {
-            var intent = IntentAssessment.Auto("no-user-gesture");
-            return ScoreRedirectHijack(
-                "https://reader.example/chapter-1", "https://identity.example/oauth/authorize", intent, config).Score
-                <= -900;
-        });
-
-        Check("같은 사이트 안에서의 이동은 보호", () =>
-        {
-            var intent = IntentAssessment.Auto("no-user-gesture");
-            return ScoreRedirectHijack(
-                "https://reader.example/chapter-1", "https://reader.example/chapter-2", intent, config).Score
-                <= -900;
-        });
-
-        Check("기본 설정 경로는 실행 파일 폴더", () =>
-            Path.GetFullPath(ConfigPath).Equals(
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "config.json")),
-                StringComparison.OrdinalIgnoreCase));
-
-        Check("클릭 URL 비교 시 추적 쿼리 추가를 허용", () =>
-            UrlMatchesIntent("https://example.com/article", "https://example.com/article?utm_source=x"));
-
-        Check("이전 링크 기록보다 최신 버튼 클릭을 우선", () =>
-        {
-            UserIntent[] intents =
-            {
-                new("opener", "control", "", "https://source.example/", "도구 열기", false, now),
-                new("opener", "link", "https://old.example/", "https://source.example/", "이전 링크", true, now - 1000)
-            };
-            return AssessRecentIntents("https://tool.example/", intents).UserControl;
-        });
-
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"자체 테스트 통과: {passed}/16");
-        Console.ResetColor();
-        return 0;
-
-        static PageContext TestPage(long createdAt) => new()
-        {
-            TargetId = "test",
-            InitialUrl = "https://example.invalid/",
-            CreatedAt = createdAt
-        };
-
-        void Check(string name, Func<bool> assertion)
-        {
-            if (!assertion())
-                throw new InvalidOperationException("자체 테스트 실패: " + name);
-            passed++;
-            Console.WriteLine("통과: " + name);
-        }
-    }
-
-    private static void WriteLine(string level, string message)
-    {
-        DateTime now = DateTime.Now;
-        lock (LogLock)
-        {
-            try
-            {
-                Directory.CreateDirectory(_dataDirectory);
-                File.AppendAllText(
-                    LogFilePath,
-                    $"{now:yyyy-MM-dd HH:mm:ss} [{level}] {message}{Environment.NewLine}",
-                    new UTF8Encoding(false));
-            }
-            catch
-            {
-            }
-        }
-
-        LogEmitted?.Invoke(new AppLogEntry(now, level, message));
-    }
-
-    private static void Info(string message) => WriteLine("info", message);
-    private static void Success(string message) => WriteLine("success", message);
-    private static void Warning(string message) => WriteLine("warning", message);
-    private static void Error(string message) => WriteLine("error", message);
 }
