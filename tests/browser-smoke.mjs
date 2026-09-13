@@ -105,7 +105,8 @@ try {
   application = spawn('dotnet', [
     applicationDll,
     `--data-dir=${dataDirectory}`,
-    `--port=${debugPort}`
+    `--port=${debugPort}`,
+    '--auto-start'
   ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   application.stdout.setEncoding('utf8');
   application.stderr.setEncoding('utf8');
@@ -119,11 +120,11 @@ try {
     return typeof version.webSocketDebuggerUrl === 'string';
   }, 10000, 'Chrome 디버깅 포트가 열리지 않았다.');
 
-  await waitFor(
-    () => applicationOutput.includes('사용자 클릭 추적을 시작했다') ||
-          applicationOutput.includes('선차단과 사용자 클릭 추적을 시작했다'),
-    10000,
-    'TabBouncer가 Chrome 감시를 시작하지 못했다.');
+  await waitFor(async () => {
+    const log = await readLogFile(dataDirectory);
+    return log.includes('사용자 클릭 추적을 시작했다') ||
+           log.includes('선차단과 사용자 클릭 추적을 시작했다');
+  }, 10000, 'TabBouncer가 Chrome 감시를 시작하지 못했다.');
 
   const initialTarget = await findPageTarget(debugPort, url => url === indexUrl);
   pageClient = new CdpConnection(initialTarget.webSocketDebuggerUrl);
@@ -332,6 +333,14 @@ async function readEvents(dataDirectoryPath) {
   const eventPath = path.join(dataDirectoryPath, 'events.jsonl');
   const content = await readFile(eventPath, 'utf8');
   return content.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+}
+
+async function readLogFile(dataDirectoryPath) {
+  try {
+    return await readFile(path.join(dataDirectoryPath, 'tabbouncer.log'), 'utf8');
+  } catch {
+    return '';
+  }
 }
 
 async function waitFor(predicate, timeoutMs, message) {

@@ -329,6 +329,7 @@ internal static class Program
     private static string _configDirectory = AppContext.BaseDirectory;
     private static string ConfigPath => Path.Combine(_configDirectory, "config.json");
     private static string EventLogPath => Path.Combine(_dataDirectory, "events.jsonl");
+    private static string LogFilePath => Path.Combine(_dataDirectory, "tabbouncer.log");
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -469,6 +470,10 @@ internal static class Program
         ApplyDataDirectoryArgument(args);
         Directory.CreateDirectory(_dataDirectory);
         LoadOrCreateConfig();
+        // 매 실행마다 사용자가 GUI에서 직접 시작 버튼을 눌러야 감시가 켜지도록,
+        // config.json에 저장된 값과 무관하게 항상 꺼진 상태로 띄운다.
+        // 자동화된 테스트 등에서는 --auto-start로 이 동작을 건너뛸 수 있다.
+        _config.Enabled = false;
         ApplyArguments(args);
 
         ApplicationConfiguration.Initialize();
@@ -540,6 +545,8 @@ internal static class Program
                 _config.StrictMode = true;
             else if (argument.Equals("--no-preempt", StringComparison.OrdinalIgnoreCase))
                 _config.PreemptiveBlock = false;
+            else if (argument.Equals("--auto-start", StringComparison.OrdinalIgnoreCase))
+                _config.Enabled = true;
             else if (argument.StartsWith("--port=", StringComparison.OrdinalIgnoreCase) &&
                      int.TryParse(argument[7..], out int port))
                 _config.DebugPort = port;
@@ -561,27 +568,6 @@ internal static class Program
             throw new ArgumentException("--data-dir 경로가 비어 있다.");
         _dataDirectory = Path.GetFullPath(path);
         _configDirectory = _dataDirectory;
-    }
-
-    private static void PrintBanner()
-    {
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine("""
-
-          ╔══════════════════════════════════════════════════╗
-          ║   T A B   B O U N C E R                          ║
-          ║   원해서 연 탭은 두고, 자동 광고 탭은 내보낸다   ║
-          ╚══════════════════════════════════════════════════╝
-        """);
-        Console.ResetColor();
-        Console.WriteLine($"  설정 : {ConfigPath}");
-        Console.WriteLine($"  로그 : {EventLogPath}");
-        Console.WriteLine($"  모드 : {(_config.DryRun ? "DRY-RUN (관측만)" : "LIVE (실제 종료)")}"
-                          + $" | 임계값 {_config.CloseThreshold}"
-                          + $" | 클릭 보호 {(_config.ProtectExplicitClicks ? "ON" : "OFF")}");
-        Console.WriteLine($"  감시 : {(_config.WatchedSites.Count == 0 ? "자동 판정" : string.Join(", ", _config.WatchedSites))}");
-        Console.WriteLine("  키   : [d]ry-run [p]ause [u]ndo [l]ist [w]정상 등록 [r]eload [q]uit");
-        Console.WriteLine(new string('─', 68));
     }
 
     private static async Task RunSessionAsync(CancellationToken cancellationToken)
@@ -1584,77 +1570,6 @@ internal static class Program
         }
     }
 
-    private static void ReadKeys()
-    {
-        while (!ApplicationCancellation.IsCancellationRequested)
-        {
-            ConsoleKeyInfo key;
-            try
-            {
-                key = Console.ReadKey(true);
-            }
-            catch
-            {
-                return;
-            }
-
-            switch (char.ToLowerInvariant(key.KeyChar))
-            {
-                case 'q':
-                    ApplicationCancellation.Cancel();
-                    return;
-
-                case 'd':
-                    _config.DryRun = !_config.DryRun;
-                    Info("DRY-RUN " + (_config.DryRun ? "ON (관측만)" : "OFF (실제 종료)"));
-                    break;
-
-                case 'p':
-                    _config.Enabled = !_config.Enabled;
-                    Info("감시 " + (_config.Enabled ? "재개" : "일시중지"));
-                    break;
-
-                case 'r':
-                    LoadOrCreateConfig();
-                    Info("설정을 다시 적용했다.");
-                    break;
-
-                case 'l':
-                    PrintRecentClosed();
-                    break;
-
-                case 'u':
-                    UndoLastClosed();
-                    break;
-
-                case 'w':
-                    AllowLastClosedSite();
-                    break;
-            }
-        }
-    }
-
-    private static void PrintRecentClosed()
-    {
-        lock (RecentClosed)
-        {
-            if (RecentClosed.Count == 0)
-            {
-                Info("최근 종료 내역이 없다.");
-                return;
-            }
-
-            Console.WriteLine("  ── 최근 종료 ──");
-            for (int index = 0; index < RecentClosed.Count; index++)
-            {
-                ClosedItem item = RecentClosed[index];
-                Console.WriteLine(
-                    $"   [{index}] {item.At:HH:mm:ss} {item.Score,3}점 " +
-                    $"[{item.Reason}] {Shorten(item.Url, 80)}");
-            }
-        }
-    }
-
     private static void UndoLastClosed()
     {
         ClosedItem? item = null;
@@ -1861,36 +1776,29 @@ internal static class Program
         }
     }
 
-    private static void WriteLine(ConsoleColor color, string marker, string message)
+    private static void WriteLine(string level, string message)
     {
         DateTime now = DateTime.Now;
         lock (LogLock)
         {
             try
             {
-                Console.ForegroundColor = color;
-                Console.Write($"[{now:HH:mm:ss}] {marker} ");
-                Console.ResetColor();
-                Console.WriteLine(message);
+                Directory.CreateDirectory(_dataDirectory);
+                File.AppendAllText(
+                    LogFilePath,
+                    $"{now:yyyy-MM-dd HH:mm:ss} [{level}] {message}{Environment.NewLine}",
+                    new UTF8Encoding(false));
             }
-            catch (IOException)
+            catch
             {
-                // GUI 실행 시에는 콘솔이 연결돼 있지 않다. 활동 로그는 MainForm이 표시한다.
             }
         }
 
-        string level = color switch
-        {
-            ConsoleColor.Green => "success",
-            ConsoleColor.Yellow => "warning",
-            ConsoleColor.Red => "error",
-            _ => "info"
-        };
         LogEmitted?.Invoke(new AppLogEntry(now, level, message));
     }
 
-    private static void Info(string message) => WriteLine(ConsoleColor.Gray, "·", message);
-    private static void Success(string message) => WriteLine(ConsoleColor.Green, "✔", message);
-    private static void Warning(string message) => WriteLine(ConsoleColor.Yellow, "!", message);
-    private static void Error(string message) => WriteLine(ConsoleColor.Red, "✖", message);
+    private static void Info(string message) => WriteLine("info", message);
+    private static void Success(string message) => WriteLine("success", message);
+    private static void Warning(string message) => WriteLine("warning", message);
+    private static void Error(string message) => WriteLine("error", message);
 }

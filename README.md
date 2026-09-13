@@ -57,14 +57,16 @@ dotnet publish src -c Release -r win-x64 --self-contained false
 
 생성 파일은 `bin\Release\win-x64\publish\tabbouncer.exe`에 있다. 실행하면 디버깅 포트 9222와 전용 프로필을 사용하는 Chrome을 자동으로 연다.
 
-TabBouncer는 Windows GUI 프로그램이다. 실행 창에서 Chrome 연결 상태와 최근 차단 내역을 확인하고 감시 상태를 바꿀 수 있다.
+TabBouncer는 Windows GUI 프로그램이다. 실행하면 창은 뜨지만 감시는 꺼진 상태이며, **"감시 시작" 버튼을 눌러야** 광고 탭을 판정하고 닫기 시작한다. 실행 창에서 Chrome 연결 상태와 최근 차단 내역을 확인하고 감시 상태를 바꿀 수 있다.
 
 테스트나 별도 인스턴스에서 설정과 프로필 위치를 분리하려면 `--data-dir=C:\원하는\경로`를 지정한다.
 Chrome에 추가 실행 인수가 필요하면 생성된 설정의 `chromeArguments` 배열에 넣는다.
 
 ## 설정
 
-첫 실행 때 **실행 파일과 같은 폴더**에 `config.json`을 만든다. 실행 중 파일을 저장하면 변경 사항을 자동으로 다시 읽는다. 로그와 Chrome 전용 프로필은 `%LOCALAPPDATA%\TabBouncer`에 저장한다.
+첫 실행 때 **실행 파일과 같은 폴더**에 `config.json`을 만든다. 실행 중 파일을 저장하면 변경 사항을 자동으로 다시 읽는다. `config.json`의 `enabled` 값과 무관하게, 프로그램을 실행할 때마다 감시는 항상 꺼진 상태로 시작하고 GUI의 "감시 시작" 버튼을 눌러야 켜진다. 자동화된 테스트 등 GUI 조작 없이 바로 감시를 켜야 하면 `--auto-start` 인수를 추가한다.
+
+로그와 Chrome 전용 프로필은 `%LOCALAPPDATA%\TabBouncer`에 저장한다. 프로그램은 콘솔 창이 없으므로 활동 로그는 화면 표시 없이 `tabbouncer.log`(사람이 읽는 로그)와 `events.jsonl`(판정 이벤트, 관측 모드에서 특히 유용)에 텍스트로 남는다.
 
 광고가 자주 생기는 사이트를 `watchedSites`에 추가하면 알려지지 않은 광고망도 더 적극적으로 차단한다.
 항상 정상으로 취급할 사이트는 `allowedSites`에 등록한다. 등록한 도메인과 모든 하위 도메인의 탭·새 창은 광고 점수와 관계없이 닫지 않는다.
@@ -90,7 +92,7 @@ Chrome에 추가 실행 인수가 필요하면 생성된 설정의 `chromeArgume
 ## GUI 기능
 
 - Chrome 연결, 감시 상태, 작동 모드, 최근 차단 수 확인
-- 감시 일시중지 또는 재개
+- 감시 시작, 일시중지, 재개
 - 실제 종료와 관측 모드 전환
 - 마지막으로 닫은 탭 다시 열기
 - 마지막으로 닫은 도메인을 정상 사이트로 등록

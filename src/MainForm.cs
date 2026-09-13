@@ -154,7 +154,7 @@ internal sealed class MainForm : Form
     private Control BuildActions()
     {
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 7, 0, 7) };
-        StyleButton(_monitoringButton, "감시 일시중지", true);
+        StyleButton(_monitoringButton, "감시 시작", true);
         _monitoringButton.Location = new Point(0, 7);
         _monitoringButton.Click += (_, _) => { Program.ToggleMonitoring(); RefreshView(); };
         panel.Controls.Add(_monitoringButton);
@@ -277,7 +277,7 @@ internal sealed class MainForm : Form
         _modeValue.Text = snapshot.DryRun ? "관측만" : "자동 차단";
         _blockedValue.Text = $"{snapshot.ClosedCount}개";
         _scopeValue.Text = $"감시 범위: {snapshot.WatchedSites}  ·  차단 기준: {snapshot.CloseThreshold}점";
-        _monitoringButton.Text = snapshot.Enabled ? "감시 일시중지" : "감시 재개";
+        _monitoringButton.Text = snapshot.Enabled ? "감시 일시중지" : "감시 시작";
 
         if (_dryRunCheck.Checked != snapshot.DryRun)
         {
