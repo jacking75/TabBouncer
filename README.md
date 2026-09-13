@@ -2,7 +2,7 @@
 
 ![TabBouncer가 사용자 요청 탭은 통과시키고 자동 광고 팝업을 차단하는 모습](docs/images/tabbouncer-hero.png)
 
-TabBouncer는 Windows 11의 Chrome에서 자동으로 생기는 광고 탭과 팝업 창을 감지해 닫는 .NET 8 프로그램이다. 사용자가 눈에 보이는 링크나 폼을 직접 선택해 연 탭은 목적지 URL을 대조해 유지한다.
+TabBouncer는 Windows 11의 Chrome에서 자동으로 생기는 광고 탭과 팝업 창을 감지해 닫는 .NET 10 프로그램이다. 사용자가 눈에 보이는 링크나 폼을 직접 선택해 연 탭은 목적지 URL을 대조해 유지한다.
 
 ## 판정 방식
 
@@ -24,24 +24,38 @@ TabBouncer는 Windows 11의 Chrome에서 자동으로 생기는 광고 탭과 �
 
 - Windows 11
 - Google Chrome 136 이상
-- .NET 8 Runtime 또는 SDK
+- .NET 10 Runtime 또는 SDK
 
 Chrome 136 이상에서는 원격 디버깅에 기본 Chrome 프로필을 쓸 수 없다. TabBouncer는 `%LOCALAPPDATA%\TabBouncer\ChromeProfile` 전용 프로필로 Chrome을 실행한다.
+
+## 프로젝트 구조
+
+소스 코드와 프로젝트 파일은 `src` 디렉토리에 있다.
+
+```
+src/
+  Program.cs         # 진입점과 CDP 감시·판정 로직
+  MainForm.cs        # Windows GUI
+  TabBouncer.csproj  # 프로젝트 파일
+  config.json        # 기본 설정 템플릿
+tests/
+  browser-smoke.mjs  # 실제 Chrome을 구동하는 브라우저 스모크 테스트
+```
 
 ## 빌드와 실행
 
 ```powershell
-dotnet build -c Release
-dotnet run -c Release
+dotnet build src -c Release
+dotnet run --project src -c Release
 ```
 
 단일 실행 파일을 만들려면 다음 명령을 사용한다.
 
 ```powershell
-dotnet publish -c Release -r win-x64 --self-contained false
+dotnet publish src -c Release -r win-x64 --self-contained false
 ```
 
-생성 파일은 `bin\Release\net8.0-windows\win-x64\publish\tabbouncer.exe`에 있다. 실행하면 디버깅 포트 9222와 전용 프로필을 사용하는 Chrome을 자동으로 연다.
+생성 파일은 `src\bin\Release\net10.0-windows\win-x64\publish\tabbouncer.exe`에 있다. 실행하면 디버깅 포트 9222와 전용 프로필을 사용하는 Chrome을 자동으로 연다.
 
 TabBouncer는 Windows GUI 프로그램이다. 실행 창에서 Chrome 연결 상태와 최근 차단 내역을 확인하고 감시 상태를 바꿀 수 있다.
 
@@ -87,7 +101,7 @@ Chrome에 추가 실행 인수가 필요하면 생성된 설정의 `chromeArgume
 ## 자체 테스트
 
 ```powershell
-dotnet run -c Release -- --self-test
+dotnet run --project src -c Release -- --self-test
 ```
 
 클릭 URL 일치, 별도 광고 탭, 버튼 팝업, 자동 외부 팝업, opener 없는 탭, 로그인 흐름, 등록한 정상 사이트 보호를 검사한다.
@@ -100,4 +114,4 @@ node .\tests\browser-smoke.mjs
 
 ## 판별 한계
 
-웹페이지의 임의 JavaScript 버튼이 여는 창은 사람이 기대한 결과인지 코드만으로 완벽하게 알 수 없다. TabBouncer는 실제 링크 목적지가 있으면 정확히 대조하고, 일반 버튼은 사용자 의도로 우선 보호한다. 특정 정상 서비스가 잘못 닫히면 실행 중 `w` 키를 누르거나 `allowedSites`에 도메인을 추가한다.
+웹페이지의 임의 JavaScript 버튼이 여는 창은 사람이 기대한 결과인지 코드만으로 완벽하게 알 수 없다. TabBouncer는 실제 링크 목적지가 있으면 정확히 대조하고, 일반 버튼은 사용자 의도로 우선 보호한다. 특정 정상 서비스가 잘못 닫히면 GUI의 "정상 사이트로 등록" 버튼을 누르거나 `allowedSites`에 도메인을 추가한다.
