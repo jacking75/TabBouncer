@@ -24,6 +24,7 @@ internal sealed class MainForm : Form
     private readonly Label _blockedValue = new();
     private readonly Label _scopeValue = new();
     private readonly Button _monitoringButton = new();
+    private readonly Button _openChromeButton = new();
     private readonly CheckBox _dryRunCheck = new();
     private readonly ListView _recentList = new();
     private readonly Button _undoButton = new();
@@ -163,6 +164,12 @@ internal sealed class MainForm : Form
         _dryRunCheck.CheckedChanged += DryRunChanged;
         panel.Controls.Add(_dryRunCheck);
 
+        StyleButton(_openChromeButton, "Chrome 열기", false);
+        _openChromeButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        _openChromeButton.Enabled = false;
+        _openChromeButton.Click += (_, _) => { Program.RequestChromeLaunch(); RefreshView(); };
+        panel.Controls.Add(_openChromeButton);
+
         var openConfig = new Button();
         StyleButton(openConfig, "설정 열기", false);
         openConfig.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -172,6 +179,7 @@ internal sealed class MainForm : Form
         panel.Resize += (_, _) =>
         {
             openConfig.Left = panel.ClientSize.Width - openConfig.Width;
+            _openChromeButton.Left = openConfig.Left - _openChromeButton.Width - 8;
         };
         return panel;
     }
@@ -269,6 +277,7 @@ internal sealed class MainForm : Form
         _blockedValue.Text = $"{snapshot.ClosedCount}개";
         _scopeValue.Text = $"감시 범위: {snapshot.WatchedSites}  ·  차단 기준: {snapshot.CloseThreshold}점";
         _monitoringButton.Text = snapshot.Enabled ? "감시 일시중지" : "감시 시작";
+        _openChromeButton.Enabled = snapshot.CanOpenChrome;
 
         if (_dryRunCheck.Checked != snapshot.DryRun)
         {

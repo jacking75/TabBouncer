@@ -97,6 +97,10 @@ internal sealed class PageContext
     public bool UserApproved;
     public string ApprovalReason = "";
     public string CommittedUrl = "";
+    public long PageNavigationRequestedAt;
+    public string RevertedFromUrl = "";
+    public long RevertedAt;
+    public int RevertCount;
 }
 
 internal sealed record UserIntent(
@@ -131,7 +135,8 @@ internal sealed record AppSnapshot(
     string ConnectionStatus,
     int CloseThreshold,
     int ClosedCount,
-    string WatchedSites);
+    string WatchedSites,
+    bool CanOpenChrome);
 
 internal sealed record AppLogEntry(DateTime At, string Level, string Message);
 
@@ -352,8 +357,11 @@ internal static class Program
     private static readonly object LogLock = new();
     private static readonly CancellationTokenSource ApplicationCancellation = new();
 
+    private static readonly SemaphoreSlim ChromeLaunchRequests = new(0, 1);
+
     private static Config _config = Config.Defaults();
     private static CdpClient? _cdp;
+    private static volatile bool _waitingForChrome;
     private static FileSystemWatcher? _configWatcher;
     private static volatile bool _connected;
     private static string _connectionStatus = "Chrome 연결 준비 중";
@@ -461,6 +469,33 @@ internal static class Program
         })();
         """;
 
+    private const string GuidePageHtml = """
+        <!doctype html>
+        <html lang="ko">
+        <meta charset="utf-8">
+        <title>TabBouncer 보호 창</title>
+        <style>
+          body { margin: 0; background: #f6f7f9; color: #181f2a;
+                 font-family: "Segoe UI", "Malgun Gothic", sans-serif; }
+          main { max-width: 640px; margin: 72px auto; padding: 32px 36px; background: #fff;
+                 border-radius: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
+          h1 { margin: 0 0 12px; font-size: 24px; }
+          p, li { color: #475467; line-height: 1.8; }
+          strong { color: #2563eb; }
+        </style>
+        <main>
+          <h1>TabBouncer 보호 창</h1>
+          <p>이 창은 TabBouncer가 연 <strong>전용 Chrome</strong>이다.
+             광고 탭·창 차단은 <strong>이 창과 이 창에서 연 탭·창에서만</strong> 동작한다.</p>
+          <ul>
+            <li>보고 싶은 사이트는 이 창의 주소창에 입력해서 연다.</li>
+            <li>평소 쓰는 Chrome 창은 보호되지 않는다. Chrome 보안 정책상 기본 프로필은 제어할 수 없다.</li>
+            <li>이 창을 모두 닫으면 감시할 대상이 사라진다. 다시 열려면 TabBouncer의 <strong>Chrome 열기</strong>를 누른다.</li>
+          </ul>
+        </main>
+        </html>
+        """;
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -501,12 +536,13 @@ internal static class Program
 
     private static async Task RunEngineAsync(CancellationToken cancellationToken)
     {
+        bool allowLaunch = _config.AutoLaunchChrome;
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
                 SetConnectionState(false, "Chrome 연결 중");
-                await RunSessionAsync(cancellationToken).ConfigureAwait(false);
+                await RunSessionAsync(allowLaunch, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -520,11 +556,9 @@ internal static class Program
             if (cancellationToken.IsCancellationRequested)
                 break;
 
-            SetConnectionState(false, "5초 후 다시 연결");
-            Info("5초 후 Chrome에 다시 연결한다.");
             try
             {
-                await Task.Delay(5000, cancellationToken).ConfigureAwait(false);
+                allowLaunch = await WaitForChromeAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -534,6 +568,41 @@ internal static class Program
 
         SetConnectionState(false, "종료됨");
         Info("종료한다.");
+    }
+
+    // 사용자가 전용 Chrome을 닫았는데 다시 띄우면 창이 끝없이 되살아난다.
+    // 다시 실행 중인 Chrome이 보이면 붙기만 하고, 새로 띄우는 것은 사용자가 요청할 때만 한다.
+    private static async Task<bool> WaitForChromeAsync(CancellationToken cancellationToken)
+    {
+        await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
+        bool announced = false;
+        try
+        {
+            while (true)
+            {
+                if (await ProbeBrowserWebSocketAsync(_config.DebugPort, cancellationToken)
+                        .ConfigureAwait(false) is not null)
+                {
+                    ChromeLaunchRequests.Wait(0);
+                    return false;
+                }
+
+                if (!announced)
+                {
+                    announced = true;
+                    _waitingForChrome = true;
+                    SetConnectionState(false, "Chrome 닫힘");
+                    Info("전용 Chrome이 실행 중이 아니다. 'Chrome 열기'를 누르면 다시 연다.");
+                }
+
+                if (await ChromeLaunchRequests.WaitAsync(5000, cancellationToken).ConfigureAwait(false))
+                    return true;
+            }
+        }
+        finally
+        {
+            _waitingForChrome = false;
+        }
     }
 
     private static void ApplyArguments(IEnumerable<string> args)
@@ -573,18 +642,15 @@ internal static class Program
         _configDirectory = _dataDirectory;
     }
 
-    private static async Task RunSessionAsync(CancellationToken cancellationToken)
+    private static async Task RunSessionAsync(bool allowLaunch, CancellationToken cancellationToken)
     {
         string? webSocketUrl = await ProbeBrowserWebSocketAsync(
             _config.DebugPort, cancellationToken).ConfigureAwait(false);
 
         if (webSocketUrl is null)
         {
-            if (!_config.AutoLaunchChrome)
-            {
-                throw new InvalidOperationException(
-                    $"127.0.0.1:{_config.DebugPort}에 디버깅 가능한 Chrome이 없다.");
-            }
+            if (!allowLaunch)
+                return;
 
             LaunchChrome();
             for (int attempt = 0; attempt < 40 && webSocketUrl is null; attempt++)
@@ -631,6 +697,11 @@ internal static class Program
         await client.SendAsync(
             "Target.setDiscoverTargets",
             new JsonObject { ["discover"] = true }).ConfigureAwait(false);
+
+        // 연결 전부터 열려 있던 탭은 새 팝업이 아니다. 판정 대상에서 빼고 현재 URL을 신뢰 기준으로 삼는다.
+        JsonNode? existing = await client.SendAsync("Target.getTargets").ConfigureAwait(false);
+        foreach (JsonNode? targetInfo in existing?["targetInfos"]?.AsArray() ?? new JsonArray())
+            AdoptExistingPage(targetInfo);
 
         await client.SendAsync(
             "Target.setAutoAttach",
@@ -685,18 +756,35 @@ internal static class Program
         startInfo.ArgumentList.Add($"--user-data-dir={profile}");
         startInfo.ArgumentList.Add("--no-first-run");
         startInfo.ArgumentList.Add("--no-default-browser-check");
-        startInfo.ArgumentList.Add("--restore-last-session");
         foreach (string argument in _config.ChromeArguments.Where(value =>
                      !string.IsNullOrWhiteSpace(value)))
         {
             startInfo.ArgumentList.Add(argument);
         }
-        if (!string.IsNullOrWhiteSpace(_config.StartUrl))
-            startInfo.ArgumentList.Add(_config.StartUrl);
+        string startUrl = string.IsNullOrWhiteSpace(_config.StartUrl)
+            ? WriteGuidePage()
+            : _config.StartUrl;
+        if (!string.IsNullOrWhiteSpace(startUrl))
+            startInfo.ArgumentList.Add(startUrl);
 
         Info("Chrome을 실행한다: " + chrome);
         Info("전용 프로필: " + profile);
         Process.Start(startInfo);
+    }
+
+    private static string WriteGuidePage()
+    {
+        string path = Path.Combine(_dataDirectory, "start.html");
+        try
+        {
+            File.WriteAllText(path, GuidePageHtml, new UTF8Encoding(false));
+            return new Uri(path).AbsoluteUri;
+        }
+        catch (Exception ex)
+        {
+            Warning("안내 페이지를 만들지 못했다: " + ex.Message);
+            return "";
+        }
     }
 
     private static string ResolveChromePath()
@@ -742,6 +830,10 @@ internal static class Program
 
                 case "Runtime.bindingCalled":
                     HandleIntentBinding(parameters, sessionId);
+                    break;
+
+                case "Page.frameRequestedNavigation":
+                    HandleFrameRequestedNavigation(parameters, sessionId);
                     break;
 
                 case "Page.frameNavigated":
@@ -802,6 +894,22 @@ internal static class Program
 
         if (method == "Target.targetInfoChanged" && !IsBlank(target.Url))
             _ = EvaluateAsync(page, "targetInfoChanged");
+    }
+
+    private static void AdoptExistingPage(JsonNode? targetInfo)
+    {
+        if (targetInfo?["targetId"] is null ||
+            !string.Equals(targetInfo["type"]?.GetValue<string>(), "page", StringComparison.Ordinal))
+            return;
+
+        HandleTargetInfo("Target.targetCreated", targetInfo);
+        if (!Pages.TryGetValue(targetInfo["targetId"]!.GetValue<string>(), out var page))
+            return;
+
+        Interlocked.Exchange(ref page.Decided, 1);
+        string url = targetInfo["url"]?.GetValue<string>() ?? "";
+        if (!IsInternal(url))
+            page.CommittedUrl = url;
     }
 
     private static void HandleAttachedTarget(JsonNode? parameters)
@@ -975,11 +1083,28 @@ internal static class Program
         if (Pages.TryGetValue(targetId, out var page))
         {
             page.Redirects++;
+            bool pageInitiated = page.PageNavigationRequestedAt != 0 &&
+                                 Now - page.PageNavigationRequestedAt <= 10000;
+            page.PageNavigationRequestedAt = 0;
             _ = EvaluateAsync(page, "frameNavigated");
             // 이미 유지하기로 결정된(Decided != 0) 탭도 자체 하이재킹 검사는 매번 새로 받아야 한다.
             // 그렇지 않으면 최초 로드 때 통과한 탭이 나중에 광고 사이트로 리다이렉트돼도 영원히 무시된다.
-            _ = EvaluateRedirectHijackAsync(page, sessionId, url);
+            _ = EvaluateRedirectHijackAsync(page, sessionId, url, pageInitiated);
         }
+    }
+
+    // Chrome은 페이지(스크립트·링크·meta refresh)가 시작한 이동에만 이 이벤트를 보낸다.
+    // 주소창 입력·북마크·뒤로 가기 같은 브라우저 주도 이동에는 오지 않으므로 둘을 구분하는 근거로 쓴다.
+    private static void HandleFrameRequestedNavigation(JsonNode? parameters, string? sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId) ||
+            !TargetsBySession.TryGetValue(sessionId, out string? targetId))
+            return;
+        if (!string.Equals(parameters?["frameId"]?.GetValue<string>(), targetId, StringComparison.Ordinal) ||
+            !string.Equals(parameters?["disposition"]?.GetValue<string>(), "currentTab", StringComparison.Ordinal))
+            return;
+        if (Pages.TryGetValue(targetId, out var page))
+            page.PageNavigationRequestedAt = Now;
     }
 
     private static void HandleDocumentRequest(JsonNode? parameters, string? sessionId)
@@ -1067,9 +1192,6 @@ internal static class Program
 
                     if (page.Decided == 0 && now - page.CreatedAt >= _config.DebounceMs)
                         await EvaluateAsync(page, "debounce").ConfigureAwait(false);
-
-                    if (now - page.CreatedAt > 15000)
-                        Pages.TryRemove(page.TargetId, out _);
                 }
 
                 foreach (ConcurrentQueue<UserIntent> queue in Intents.Values)
@@ -1239,24 +1361,25 @@ internal static class Program
         }
     }
 
-    private static async Task EvaluateRedirectHijackAsync(PageContext page, string sessionId, string newUrl)
+    private static async Task EvaluateRedirectHijackAsync(
+        PageContext page,
+        string sessionId,
+        string newUrl,
+        bool pageInitiated)
     {
-        CdpClient? client = _cdp;
-        if (!_config.Enabled || !_config.BlockRedirectHijack || client is null)
-            return;
-        if (IsBlank(newUrl) || IsInternal(newUrl))
+        if (IsInternal(newUrl))
             return;
 
         string trustedUrl = page.CommittedUrl;
-        if (IsBlank(trustedUrl))
+        CdpClient? client = _cdp;
+        // 감시가 꺼져 있을 때도 기준 URL은 따라가야 다시 켰을 때 엉뚱한 페이지로 되돌리지 않는다.
+        if (!pageInitiated || IsBlank(trustedUrl) ||
+            trustedUrl.Equals(newUrl, StringComparison.OrdinalIgnoreCase) ||
+            !_config.Enabled || !_config.BlockRedirectHijack || client is null)
         {
-            // 이 탭에서 처음으로 실제 내용이 로드된 것이다. 기준 URL로 기록만 하고 넘어간다.
             page.CommittedUrl = newUrl;
             return;
         }
-
-        if (trustedUrl.Equals(newUrl, StringComparison.OrdinalIgnoreCase))
-            return;
 
         IntentAssessment intent = AssessSameTabIntent(page, newUrl);
         (int score, string reason) = ScoreRedirectHijack(trustedUrl, newUrl, intent, _config);
@@ -1271,8 +1394,26 @@ internal static class Program
         {
             Warning($"[DRY-RUN] 리다이렉트 차단 대상 {score}점 [{reason}] {Shorten(newUrl)}");
             WriteEvent(new { stage = "redirect-dry-run", score, reason, url = newUrl, restoredUrl = trustedUrl });
+            page.CommittedUrl = newUrl;
             return;
         }
+
+        bool repeating = page.RevertedFromUrl.Equals(trustedUrl, StringComparison.OrdinalIgnoreCase) &&
+                         Now - page.RevertedAt < 30000;
+        int attempts = repeating ? page.RevertCount : 0;
+        if (attempts >= 2)
+        {
+            // 되돌린 페이지가 스스로 다시 이동하면 무한 반복된다. 두 번 막은 뒤에는 이동을 허용한다.
+            Warning($"같은 페이지에서 리다이렉트가 반복돼 더 막지 않는다 {score}점 [{reason}] {Shorten(newUrl)}");
+            page.RevertedFromUrl = "";
+            page.RevertCount = 0;
+            page.CommittedUrl = newUrl;
+            return;
+        }
+
+        page.RevertedFromUrl = trustedUrl;
+        page.RevertedAt = Now;
+        page.RevertCount = attempts + 1;
 
         try
         {
@@ -1294,6 +1435,7 @@ internal static class Program
         }
         catch (Exception ex)
         {
+            page.CommittedUrl = newUrl;
             Error("리다이렉트 복구 실패: " + ex.Message);
         }
     }
@@ -1770,7 +1912,21 @@ internal static class Program
             _connectionStatus,
             _config.CloseThreshold,
             closedCount,
-            watched);
+            watched,
+            _waitingForChrome);
+    }
+
+    internal static void RequestChromeLaunch()
+    {
+        if (!_waitingForChrome)
+            return;
+        try
+        {
+            ChromeLaunchRequests.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+        }
     }
 
     internal static IReadOnlyList<ClosedItem> GetRecentClosed()
