@@ -1,0 +1,55 @@
+name: 정상 탭이 닫힘 (오탐) / Legitimate tab closed
+description: 사용자가 연 탭이나 로그인·결제 창이 닫혔거나, 보던 페이지가 원래대로 되돌아갔다.
+labels: ["false-positive"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        먼저 최근 목록에서 그 항목을 선택하고 "선택한 사이트 등록"을 눌러 해결되는지 확인한다.
+        사이트 주소를 공개하기 어렵다면 사이트 종류만 적어도 된다.
+  - type: input
+    id: site
+    attributes:
+      label: 사이트 또는 사이트 종류 / Site
+      placeholder: 예) 웹툰 사이트, https://example.com
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 목록의 종류 / Item type
+      options:
+        - 탭 닫음 / Closed tab
+        - 이동 되돌림 / Reverted redirect
+        - 모름 / Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: action
+    attributes:
+      label: 한 동작 / What you did
+      description: 무엇을 눌렀는지. 링크, 버튼, 로그인 창 열기 등
+    validations:
+      required: true
+  - type: textarea
+    id: verdict
+    attributes:
+      label: 점수와 판정 / Score and reason
+      description: 최근 목록 상세 패널의 "점수 내역" 줄, 또는 events.jsonl의 해당 줄
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: allowed
+    attributes:
+      label: 정상 사이트로 등록하면 해결되나 / Does allowing the site fix it?
+      options:
+        - 해결됨 / Yes
+        - 해결되지 않음 / No
+        - 시도하지 않음 / Not tried
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 진단 정보 / Diagnostics
+      description: '"진단 정보 복사" 결과'
+      render: text

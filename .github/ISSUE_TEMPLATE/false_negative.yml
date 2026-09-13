@@ -1,0 +1,55 @@
+name: 광고 탭이 닫히지 않음 (미탐) / Ad tab not blocked
+description: 전용 Chrome에서 광고 탭·창·강제 이동이 막히지 않았다.
+labels: ["false-negative"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        먼저 확인한다: 평소 Chrome이 아니라 TabBouncer 전용 Chrome에서 열었는가, 감시 중인가, 관측 모드가 꺼져 있는가.
+        최근 목록에서 "유지·관측 항목도 표시"를 켜고 그 탭이 "유지"로 남았는지도 본다.
+  - type: input
+    id: site
+    attributes:
+      label: 광고가 뜬 사이트 / Site where the ad appeared
+    validations:
+      required: true
+  - type: input
+    id: ad
+    attributes:
+      label: 광고 탭 도메인 / Ad tab domain
+      placeholder: 예) something.xyz
+    validations:
+      required: true
+  - type: dropdown
+    id: trigger
+    attributes:
+      label: 광고가 열린 계기 / Trigger
+      options:
+        - 링크를 눌렀더니 함께 열림 / Opened with a link
+        - 버튼을 눌렀더니 열림 / Opened by a button
+        - 빈 곳을 눌렀더니 열림 / Clicked a blank area
+        - 아무것도 안 눌렀는데 열림 / No click
+        - 보던 탭이 광고로 이동함 / Current tab redirected
+    validations:
+      required: true
+  - type: textarea
+    id: verdict
+    attributes:
+      label: 목록 또는 이벤트 기록 / List item or event
+      description: 목록에 "유지"나 "관측" 항목이 있으면 점수 내역을, 없으면 events.jsonl에서 그 주소가 들어간 줄을 붙인다.
+      render: text
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 관측 모드 / Observe mode
+      options:
+        - 꺼짐 / Off
+        - 켜짐 / On
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 진단 정보 / Diagnostics
+      description: '"진단 정보 복사" 결과'
+      render: text

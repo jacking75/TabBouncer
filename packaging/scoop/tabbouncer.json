@@ -1,0 +1,38 @@
+{
+    "version": "1.1.0",
+    "description": "Closes automatic ad tabs and popups in a dedicated Chrome window while keeping the tabs you opened.",
+    "homepage": "https://github.com/jacking75/TabBouncer",
+    "license": "MIT",
+    "notes": [
+        "TabBouncer only protects the dedicated Chrome window it opens.",
+        "Settings are kept in $persist_dir\\config.json across updates."
+    ],
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/jacking75/TabBouncer/releases/download/v1.1.0/TabBouncer-v1.1.0-win-x64-selfcontained.zip",
+            "hash": "REPLACE_WITH_SHA256_FROM_RELEASE"
+        }
+    },
+    "bin": "tabbouncer.exe",
+    "shortcuts": [
+        [
+            "tabbouncer.exe",
+            "TabBouncer"
+        ]
+    ],
+    "persist": "config.json",
+    "checkver": {
+        "github": "https://github.com/jacking75/TabBouncer"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/jacking75/TabBouncer/releases/download/v$version/TabBouncer-v$version-win-x64-selfcontained.zip",
+                "hash": {
+                    "url": "https://github.com/jacking75/TabBouncer/releases/download/v$version/SHA256SUMS.txt",
+                    "regex": "$sha256\\s+$basename"
+                }
+            }
+        }
+    }
+}

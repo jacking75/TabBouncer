@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 자주 묻는 질문 / FAQ
+    url: https://github.com/jacking75/TabBouncer/blob/main/docs/faq.md
+    about: 사용법 질문은 먼저 FAQ를 확인한다. Check the FAQ for usage questions.
+  - name: 문제 해결 문서 / Troubleshooting
+    url: https://github.com/jacking75/TabBouncer/blob/main/docs/troubleshooting.md
+    about: 흔한 문제의 해결 방법을 먼저 확인한다. Check common fixes first.

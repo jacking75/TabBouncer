@@ -427,3 +427,9 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# 로컬 작업 계획 문서 (git으로 관리하지 않음)
+docs/improvement-plan.md
+
+# 릴리스 패키징 출력
+artifacts/

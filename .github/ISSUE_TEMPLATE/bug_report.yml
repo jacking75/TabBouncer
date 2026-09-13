@@ -1,0 +1,53 @@
+name: 버그 신고 / Bug report
+description: 프로그램이 멈추거나, 오류가 나거나, 설명과 다르게 동작한다.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        광고 탭이 닫히지 않거나 정상 탭이 닫히는 문제는 전용 템플릿(오탐·미탐)을 쓴다.
+        붙여 넣는 로그와 진단 정보에서 공개하고 싶지 않은 주소는 지운다.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 진단 정보 / Diagnostics
+      description: TabBouncer 창 활동 영역의 "진단 정보 복사"를 눌러 붙여 넣는다.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 재현 단계 / Steps to reproduce
+      placeholder: |
+        1. 감시 시작을 누른다
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대한 동작 / Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제 동작 / Actual
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: 관련 로그 / Log excerpt
+      description: '%LOCALAPPDATA%\TabBouncer\tabbouncer.log에서 문제 시각 전후 몇 줄'
+      render: text
+  - type: dropdown
+    id: package
+    attributes:
+      label: 설치 방식 / Package
+      options:
+        - win-x64.zip (.NET 런타임 별도)
+        - win-x64-selfcontained.zip
+        - 직접 빌드 / Built from source
+        - 기타 / Other

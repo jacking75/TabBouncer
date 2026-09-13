@@ -1,0 +1,40 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      # 저장소 비밀값에 PFX를 Base64로 넣으면 실행 파일에 서명한다. 없으면 서명 없이 릴리스한다.
+      SIGNING_CERTIFICATE_BASE64: ${{ secrets.SIGNING_CERTIFICATE_BASE64 }}
+      SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Self-test
+        run: dotnet run --project src -c Release -- --self-test
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          ./build/package.ps1 -Version $version -OutputDirectory artifacts
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TabBouncer ${{ github.ref_name }}
+          body_path: artifacts/release-notes.md
+          files: |
+            artifacts/*.zip
+            artifacts/SHA256SUMS.txt
