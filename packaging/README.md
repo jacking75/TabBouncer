@@ -22,7 +22,7 @@ packaging/
   -Sha256Sums https://github.com/jacking75/TabBouncer/releases/download/v1.1.0/SHA256SUMS.txt
 ```
 
-로컬에서 `build/package.ps1`을 돌린 결과로 시험할 때는 `-Sha256Sums artifacts/SHA256SUMS.txt`를 준다. 이 해시는 CI가 만든 파일과 다르므로 커밋하지 않는다.
+로컬에서 `build/package.ps1`을 돌린 결과로 시험할 때는 `-Sha256Sums artifacts/SHA256SUMS.txt`를 준다. 이 해시는 릴리스 워크플로가 만든 파일과 다르므로 커밋하지 않는다.
 
 ## 2. winget
 

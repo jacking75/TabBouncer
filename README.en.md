@@ -1,7 +1,6 @@
 # TabBouncer
 
 [![Latest release](https://img.shields.io/github/v/release/jacking75/TabBouncer)](https://github.com/jacking75/TabBouncer/releases/latest)
-[![CI](https://github.com/jacking75/TabBouncer/actions/workflows/ci.yml/badge.svg)](https://github.com/jacking75/TabBouncer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [한국어](README.md) | [English](README.en.md)
