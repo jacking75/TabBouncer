@@ -460,12 +460,12 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        Console.OutputEncoding = Encoding.UTF8;
-
         if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase))
+        {
+            Console.OutputEncoding = Encoding.UTF8;
             return RunSelfTests();
+        }
 
-        Console.Title = AppName;
         ApplyDataDirectoryArgument(args);
         Directory.CreateDirectory(_dataDirectory);
         LoadOrCreateConfig();
@@ -1866,10 +1866,17 @@ internal static class Program
         DateTime now = DateTime.Now;
         lock (LogLock)
         {
-            Console.ForegroundColor = color;
-            Console.Write($"[{now:HH:mm:ss}] {marker} ");
-            Console.ResetColor();
-            Console.WriteLine(message);
+            try
+            {
+                Console.ForegroundColor = color;
+                Console.Write($"[{now:HH:mm:ss}] {marker} ");
+                Console.ResetColor();
+                Console.WriteLine(message);
+            }
+            catch (IOException)
+            {
+                // GUI 실행 시에는 콘솔이 연결돼 있지 않다. 활동 로그는 MainForm이 표시한다.
+            }
         }
 
         string level = color switch
