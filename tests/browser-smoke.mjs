@@ -11,10 +11,10 @@ async function main() {
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(testDirectory, '..');
 const applicationDll = path.join(
-  repositoryRoot, 'src', 'bin', 'Release', 'net10.0-windows', 'tabbouncer.dll');
+  repositoryRoot, 'bin', 'Release', 'tabbouncer.dll');
 
 if (!existsSync(applicationDll)) {
-  throw new Error('먼저 dotnet build -c Release --project src를 실행해야 한다.');
+  throw new Error('먼저 dotnet build src -c Release를 실행해야 한다.');
 }
 
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'TabBouncerSmoke-'));

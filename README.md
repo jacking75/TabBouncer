@@ -55,7 +55,7 @@ dotnet run --project src -c Release
 dotnet publish src -c Release -r win-x64 --self-contained false
 ```
 
-생성 파일은 `src\bin\Release\net10.0-windows\win-x64\publish\tabbouncer.exe`에 있다. 실행하면 디버깅 포트 9222와 전용 프로필을 사용하는 Chrome을 자동으로 연다.
+생성 파일은 `bin\Release\win-x64\publish\tabbouncer.exe`에 있다. 실행하면 디버깅 포트 9222와 전용 프로필을 사용하는 Chrome을 자동으로 연다.
 
 TabBouncer는 Windows GUI 프로그램이다. 실행 창에서 Chrome 연결 상태와 최근 차단 내역을 확인하고 감시 상태를 바꿀 수 있다.
 
