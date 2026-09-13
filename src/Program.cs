@@ -56,7 +56,8 @@ internal sealed class Config
             "onclickalgo.com", "onclckpro.com", "onclasrv.com", "bidgear.com",
             "doubleclick.net", "adnxs.com", "adsrvr.org", "mgid.com",
             "revcontent.com", "taboola.com", "outbrain.com", "zeropark.com",
-            "clickaine.com", "popunder.net", "richads.com", "monetag.com"
+            "clickaine.com", "popunder.net", "richads.com", "monetag.com",
+            "incompetencesorting.com"
         },
         Whitelist = new()
         {
@@ -1884,6 +1885,13 @@ internal static class Program
             return Score("https://tool.example/a", "https://problem.example/", page, intent, config).Score < config.CloseThreshold;
         });
 
+        Check("버튼으로 열려도 등록된 광고 도메인은 종료", () =>
+        {
+            var page = TestPage(now);
+            var intent = IntentAssessment.Control("clicked-control");
+            return Score("https://incompetencesorting.com/x?key=1", "https://problem.example/", page, intent, config).Score >= config.CloseThreshold;
+        });
+
         Check("사용자 동작 없는 외부 팝업은 종료", () =>
         {
             var page = TestPage(now);
@@ -1972,7 +1980,7 @@ internal static class Program
         });
 
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"자체 테스트 통과: {passed}/15");
+        Console.WriteLine($"자체 테스트 통과: {passed}/16");
         Console.ResetColor();
         return 0;
 
