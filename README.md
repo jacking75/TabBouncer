@@ -39,6 +39,7 @@ Chrome 136 이상에서는 원격 디버깅에 기본 Chrome 프로필을 쓸 �
 src/
   Program.cs         # 진입점과 CDP 감시·판정 로직
   MainForm.cs        # Windows GUI
+  ConfigForm.cs      # 설정 편집 다이얼로그
   TabBouncer.csproj  # 프로젝트 파일
   config.json        # 기본 설정 템플릿
 tests/
@@ -100,7 +101,7 @@ Chrome에 추가 실행 인수가 필요하면 생성된 설정의 `chromeArgume
 - 실제 종료와 관측 모드 전환
 - 마지막으로 닫은 탭 다시 열기
 - 마지막으로 닫은 도메인을 정상 사이트로 등록
-- `config.json` 열기 및 설정 다시 읽기
+- "설정 열기" 버튼으로 프로그램 안에서 `config.json`을 직접 편집하고 저장(저장하면 자동으로 다시 적용)
 
 종료 횟수 제한은 없다. 짧은 시간에 광고 탭이나 창이 10개 이상 생성돼도 광고로 판정되는 항목은 모두 닫는다. 브라우저의 마지막 일반 탭은 닫지 않는다.
 

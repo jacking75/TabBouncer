@@ -1,9 +1,7 @@
 #nullable enable
 
 using System;
-using System.Diagnostics;
 using System.Drawing;
-using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 
@@ -165,22 +163,15 @@ internal sealed class MainForm : Form
         _dryRunCheck.CheckedChanged += DryRunChanged;
         panel.Controls.Add(_dryRunCheck);
 
-        var reload = new Button();
-        StyleButton(reload, "설정 다시 읽기", false);
-        reload.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        reload.Click += (_, _) => { Program.ReloadConfig(); RefreshView(); };
-        panel.Controls.Add(reload);
-
         var openConfig = new Button();
         StyleButton(openConfig, "설정 열기", false);
         openConfig.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        openConfig.Click += (_, _) => OpenConfig();
+        openConfig.Click += (_, _) => ShowConfigDialog();
         panel.Controls.Add(openConfig);
 
         panel.Resize += (_, _) =>
         {
             openConfig.Left = panel.ClientSize.Width - openConfig.Width;
-            reload.Left = openConfig.Left - reload.Width - 8;
         };
         return panel;
     }
@@ -348,11 +339,10 @@ internal sealed class MainForm : Form
         _activity.ScrollToCaret();
     }
 
-    private static void OpenConfig()
+    private void ShowConfigDialog()
     {
-        string path = Program.GetConfigPath();
-        if (!File.Exists(path))
-            return;
-        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        using var dialog = new ConfigForm();
+        dialog.ShowDialog(this);
+        RefreshView(true);
     }
 }

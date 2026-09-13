@@ -1805,6 +1805,51 @@ internal static class Program
 
     internal static string GetConfigPath() => ConfigPath;
 
+    internal static string ReadConfigText()
+    {
+        try
+        {
+            return File.Exists(ConfigPath) ? File.ReadAllText(ConfigPath, Encoding.UTF8) : "";
+        }
+        catch (Exception ex)
+        {
+            Error("설정 파일을 읽지 못했다: " + ex.Message);
+            return "";
+        }
+    }
+
+    internal static bool TrySaveConfigText(string json, out string error)
+    {
+        try
+        {
+            if (JsonSerializer.Deserialize<Config>(json, JsonOptions) is null)
+            {
+                error = "설정 내용이 비어 있다.";
+                return false;
+            }
+        }
+        catch (JsonException ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(_configDirectory);
+            File.WriteAllText(ConfigPath, json, new UTF8Encoding(false));
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+
+        error = "";
+        ReloadConfig();
+        return true;
+    }
+
     private static void SetConnectionState(bool connected, string status)
     {
         _connected = connected;
