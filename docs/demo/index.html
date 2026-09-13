@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TabBouncer 데모</title>
+<style>
+  body { margin: 0; background: #f6f7f9; color: #181f2a; font: 16px/1.6 "Segoe UI", "Malgun Gothic", sans-serif; }
+  main { max-width: 760px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 24px; margin: 0 0 6px; }
+  p.lead { color: #475467; margin: 0 0 20px; }
+  .case { background: #fff; border-radius: 10px; padding: 14px 18px; margin: 12px 0;
+          box-shadow: 0 1px 3px rgba(0,0,0,.08); display: flex; gap: 16px; align-items: center; }
+  .case .text { flex: 1; }
+  .case strong { display: block; }
+  .case span { color: #667085; font-size: 14px; }
+  .expect { font-size: 13px; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+  .keep { background: #dcfce7; color: #166534; }
+  .block { background: #fee2e2; color: #991b1b; }
+  a.button, button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #d0d5dd;
+                     background: #fff; color: #181f2a; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .blank-area { width: 150px; height: 42px; background: #eef2f6; border-radius: 8px; cursor: pointer;
+                display: flex; align-items: center; justify-content: center; color: #98a2b3; font-size: 13px; }
+  #status { color: #2563eb; min-height: 1.6em; }
+  .landing { background: #fff; border-radius: 10px; padding: 32px; text-align: center; }
+  code { background: #eef2f6; padding: 1px 5px; border-radius: 4px; }
+</style>
+<main id="app"></main>
+<script>
+  // 광고 탭은 다른 사이트에서 열린 것처럼 보이도록 127.0.0.1과 localhost를 바꿔 쓴다.
+  const here = new URL(location.href);
+  const otherHost = here.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+  const same = page => `${here.origin}${here.pathname}?page=${page}`;
+  const other = page => `${here.protocol}//${otherHost}${here.port ? ':' + here.port : ''}${here.pathname}?page=${page}`;
+  const page = here.searchParams.get('page');
+  const app = document.getElementById('app');
+
+  if (location.protocol === 'file:') {
+    app.innerHTML = `<h1>TabBouncer 데모</h1>
+      <p class="lead">이 페이지는 웹 서버로 열어야 한다. 저장소 폴더에서 아래 명령을 실행한 뒤,
+      TabBouncer 전용 Chrome 주소창에 <code>http://127.0.0.1:25080/</code>을 입력한다.</p>
+      <p><code>python -m http.server 25080 --bind 127.0.0.1 --directory docs/demo</code></p>`;
+  } else if (page) {
+    const isAd = /^(ad|burst|passive|redirected)/.test(page);
+    document.title = isAd ? '광고 페이지' : '열린 페이지';
+    app.innerHTML = `<div class="landing"><h1>${isAd ? '광고 페이지' : '원해서 연 페이지'}</h1>
+      <p>${isAd ? 'TabBouncer가 동작하면 이 탭은 곧 닫히거나 이전 페이지로 돌아간다.' : '사용자가 연 탭이므로 유지된다.'}</p>
+      <p><code>${page}</code></p></div>`;
+  } else {
+    app.innerHTML = `
+      <h1>TabBouncer 데모</h1>
+      <p class="lead">TabBouncer 전용 Chrome에서 감시를 켠 채 각 항목을 눌러 본다. 결과는 TabBouncer 창의 최근 목록에 나타난다.</p>
+      <div class="case"><div class="text"><strong>원해서 여는 링크</strong><span>눈에 보이는 링크를 새 탭으로 연다.</span></div>
+        <span class="expect keep">유지</span><a class="button" id="wanted" href="${same('wanted')}" target="_blank">링크 열기</a></div>
+      <div class="case"><div class="text"><strong>링크와 함께 열리는 광고</strong><span>링크 목적지와 다른 사이트 탭이 하나 더 열린다.</span></div>
+        <span class="expect block">광고 탭 닫음</span><a class="button" id="side-effect" href="${same('landing')}" target="_blank">본문 보기</a></div>
+      <div class="case"><div class="text"><strong>의도한 버튼</strong><span>버튼을 눌러 다른 사이트 창을 연다.</span></div>
+        <span class="expect keep">유지</span><button id="control" type="button">도구 창 열기</button></div>
+      <div class="case"><div class="text"><strong>빈 영역 클릭 광고</strong><span>화면 아무 곳이나 눌렀을 때 광고 탭이 열린다.</span></div>
+        <span class="expect block">광고 탭 닫음</span><div class="blank-area" id="passive">빈 영역</div></div>
+      <div class="case"><div class="text"><strong>광고 탭 12개 폭주</strong><span>한 번에 광고 탭이 여러 개 열린다.</span></div>
+        <span class="expect block">모두 닫음</span><div class="blank-area" id="burst">빈 영역</div></div>
+      <div class="case"><div class="text"><strong>보던 탭 강제 이동</strong><span>5초 뒤 클릭 없이 다른 사이트로 넘어간다.</span></div>
+        <span class="expect block">원래 페이지로 복귀</span><div class="blank-area" id="hijack">빈 영역</div></div>
+      <p id="status"></p>`;
+
+    document.getElementById('side-effect').addEventListener('click', () => window.open(other('ad'), '_blank'));
+    document.getElementById('control').addEventListener('click', () => window.open(other('tool'), '_blank'));
+    document.getElementById('passive').addEventListener('click', () => window.open(other('passive'), '_blank'));
+    document.getElementById('burst').addEventListener('click', () => {
+      for (let i = 0; i < 12; i++) window.open(other('burst-' + i), '_blank');
+    });
+    document.getElementById('hijack').addEventListener('click', () => {
+      const status = document.getElementById('status');
+      let left = 5;
+      status.textContent = `${left}초 뒤 이 탭이 다른 사이트로 이동한다.`;
+      const timer = setInterval(() => {
+        left--;
+        if (left > 0) { status.textContent = `${left}초 뒤 이 탭이 다른 사이트로 이동한다.`; return; }
+        clearInterval(timer);
+        location.href = other('redirected');
+      }, 1000);
+    });
+  }
+</script>
+</html>

@@ -1,8 +1,18 @@
 # TabBouncer
 
+[![최신 릴리스](https://img.shields.io/github/v/release/jacking75/TabBouncer?label=%EB%A6%B4%EB%A6%AC%EC%8A%A4)](https://github.com/jacking75/TabBouncer/releases/latest)
+[![CI](https://github.com/jacking75/TabBouncer/actions/workflows/ci.yml/badge.svg)](https://github.com/jacking75/TabBouncer/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+[한국어](README.md) | [English](README.en.md)
+
 ![TabBouncer가 사용자 요청 탭은 통과시키고 자동 광고 팝업을 차단하는 모습](docs/images/tabbouncer-hero.png)
 
-TabBouncer는 Windows 11의 Chrome에서 자동으로 생기는 광고 탭과 팝업 창을 감지해 닫는 .NET 10 프로그램이다. 사용자가 눈에 보이는 링크나 폼을 직접 선택해 연 탭은 목적지 URL을 대조해 유지한다.
+TabBouncer는 Windows 11의 Chrome에서 자동으로 생기는 광고 탭과 팝업 창을 감지해 닫는 프로그램이다. 사용자가 눈에 보이는 링크나 폼을 직접 선택해 연 탭은 목적지 URL을 대조해 유지한다.
+
+> **TabBouncer는 TabBouncer가 연 전용 Chrome 창만 보호한다.** 평소 쓰는 Chrome 창은 건드리지 않는다. 광고 팝업이 많은 사이트는 전용 창의 주소창이나 TabBouncer 창의 주소 입력란에서 연다.
+
+![데모 페이지에서 링크를 누르면 목적지 탭은 유지되고 함께 열린 광고 탭은 닫히며 TabBouncer 창의 최근 목록에 기록되는 모습](docs/images/demo.gif)
 
 ## 어떤 앱인가
 
@@ -13,7 +23,8 @@ TabBouncer는 Windows 11의 Chrome에서 자동으로 생기는 광고 탭과 �
 | 클릭한 링크의 목적지와 실제 새 탭 URL을 대조 | 보고 싶어서 연 링크와 로그인·결제 창을 최대한 유지한다. |
 | 클릭 없이 생긴 외부 탭과 광고 도메인을 점수로 판정 | 한 번의 클릭에서 부수적으로 열리는 광고 탭을 자동으로 닫는다. |
 | 현재 탭의 자동 외부 이동도 감시 | 읽던 페이지가 광고 사이트로 바뀌면 원래 페이지로 되돌린다. |
-| 최근 차단 내역, 관측 모드, 정상 사이트 등록 제공 | 처음에는 안전하게 결과를 확인하고, 필요한 사이트는 즉시 예외 처리할 수 있다. |
+| 판정 사유와 점수 내역, 관측 모드, 한 번에 예외 등록 | 왜 닫혔는지 확인하고, 잘못 닫힌 사이트나 놓친 광고를 바로 등록한다. |
+| 트레이 상주, 차단 알림, 로그인 시 자동 실행 | 창을 띄워 두지 않아도 조용히 보호하고, 막을 때만 알린다. |
 
 ### 이런 곳에서 사용한다
 
@@ -21,11 +32,98 @@ TabBouncer는 Windows 11의 Chrome에서 자동으로 생기는 광고 탭과 �
 - 링크를 눌렀는데 별도 창이 여러 개 뜨거나, 현재 탭이 다른 광고 사이트로 넘어가는 환경에서 사용한다.
 - 가족이나 팀원이 반복 팝업 때문에 불편을 겪지만 브라우저 개발자 도구를 직접 다루기 어려울 때 사용한다.
 
-TabBouncer는 전용 Chrome 창만 감시한다. 평소 쓰는 Chrome 창은 건드리지 않으므로, 광고 팝업이 많은 사이트는 TabBouncer가 연 창의 주소창에서 방문하면 된다.
+## 다운로드와 설치
+
+### 요구 환경
+
+- Windows 11 64비트
+- Google Chrome 136 이상. Chrome이 없으면 Microsoft Edge, Brave, Chromium을 차례로 찾는다. Edge는 스모크 테스트로 확인했고 Brave·Chromium은 실험적이다.
+- 런타임 포함 버전이 아니면 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
+
+### 받기
+
+[Releases](https://github.com/jacking75/TabBouncer/releases/latest)에서 둘 중 하나를 받는다.
+
+| 파일 | 고르는 기준 |
+|---|---|
+| `TabBouncer-vX.Y.Z-win-x64.zip` | 파일이 작다. .NET 10 Desktop Runtime이 설치돼 있거나 설치할 수 있으면 이것을 쓴다. |
+| `TabBouncer-vX.Y.Z-win-x64-selfcontained.zip` | 런타임이 들어 있어 따로 설치할 것이 없다. 파일이 크다. |
+
+압축은 아무 폴더에나 풀면 된다. `%LOCALAPPDATA%\Programs\TabBouncer`를 권한다. `C:\Program Files`처럼 쓰기 권한이 없는 폴더에 풀면 설정 파일은 자동으로 `%LOCALAPPDATA%\TabBouncer\config.json`에 저장된다. 배포 파일에는 `config.json`이 들어 있지 않아, 새 버전을 기존 폴더에 덮어써도 설정이 유지된다.
+
+### 처음 실행할 때
+
+TabBouncer 실행 파일은 아직 코드 서명이 없어 Windows SmartScreen이 "Windows의 PC 보호" 창을 띄울 수 있다. 받은 파일이 릴리스의 `SHA256SUMS.txt`와 같은지 확인한 뒤 **추가 정보 → 실행**을 누른다.
+
+```powershell
+Get-FileHash .\TabBouncer-v1.1.0-win-x64.zip -Algorithm SHA256
+```
+
+1. `tabbouncer.exe`를 실행한다.
+2. **감시 시작**을 누른다. 전용 Chrome 창이 함께 열린다.
+3. 전용 창의 주소창에 보고 싶은 사이트를 입력한다.
+
+처음 며칠은 **관측 모드**를 켜 두면 탭을 닫지 않고 "닫았을 탭"만 목록에 기록한다. 결과가 괜찮으면 관측 모드를 끈다.
+
+## 사용 방법
+
+### 1. 감시를 시작한다
+
+![TabBouncer 메인 창. 감시 상태, 작동 모드, 차단 개수 카드와 최근 차단 목록, 선택한 항목의 점수 내역이 보인다.](docs/images/001.png)
+
+프로그램을 실행하면 감시는 안전을 위해 꺼진 상태로 시작한다. 노란 배너가 보이면 **감시 시작**을 누른다. 전용 Chrome이 닫혀 있으면 감시 시작과 함께 열린다. 매번 누르기 번거로우면 **설정 → 일반 → 실행하면 바로 감시 시작**을 켠다.
+
+감시 중인데 전용 Chrome을 모두 닫으면 주황 배너와 창 제목이 "Chrome 닫힘"을 알린다. TabBouncer는 닫은 Chrome을 멋대로 다시 띄우지 않는다. **Chrome 열기**를 누르면 다시 연다.
+
+### 2. 전용 Chrome 창에서 웹을 연다
+
+![TabBouncer 전용 Chrome의 안내 페이지. 감시 상태, 감시 일시중지와 관측 모드 버튼, 이번 실행 차단 개수, 즐겨찾기 사이트가 보인다.](docs/images/002.png)
+
+전용 Chrome은 평소 프로필과 분리된 창이다. 사이트는 다음 방법 중 편한 것으로 연다.
+
+- 전용 창의 주소창에 입력한다.
+- TabBouncer 창의 주소 입력란에 입력하고 Enter를 누른다(Ctrl+L로 바로 이동).
+- 안내 페이지의 **즐겨찾기 사이트** 링크를 누른다. 목록은 설정의 사이트 목록 탭에서 관리한다.
+- 설정에서 즐겨찾기 사이트를 선택하고 **바탕화면 바로가기 만들기**를 누른다. TabBouncer가 실행 중이면 바로가기가 그 전용 Chrome에 새 탭으로 연다. 실행 중이 아니면 TabBouncer를 켜고 그 주소로 전용 Chrome을 연다. 이때 감시는 평소처럼 꺼진 상태로 시작하므로 **감시 시작**을 누르거나 "실행하면 바로 감시 시작"을 켜 둔다.
+
+안내 페이지에서도 감시 일시중지와 관측 모드를 바로 바꿀 수 있다.
+
+### 3. 결과를 확인하고 예외를 등록한다
+
+![최근 차단 목록과 상세 패널. 같은 사이트에서 반복된 광고 탭이 한 행으로 묶여 횟수가 보이고, 선택한 항목의 종류, 주소, 돌아간 페이지, 항목별 점수가 보인다.](docs/images/004.png)
+
+**최근 차단한 탭** 목록은 닫은 탭, 되돌린 리다이렉트, 기준에 조금 못 미쳐 유지한 탭, 관측 모드에서 닫았을 탭을 보여 준다. 같은 사이트(호스트)에서 같은 종류가 반복되면 새 행을 만들지 않고 **횟수** 열의 숫자를 올린다. 이 행은 가장 최근 시각과 주소를 보여 주고, 상세 패널에 반복 횟수와 처음 시각이 나온다. 항목을 선택하면 아래 상세 패널에 판정 사유와 항목별 점수가 나온다. 이전 실행의 기록도 흐린 글자로 함께 보인다.
+
+| 상황 | 할 일 |
+|---|---|
+| 정상 사이트가 닫혔다 | 항목을 선택하고 **선택한 탭 다시 열기**, **선택한 사이트 등록**을 누른다. 등록한 도메인과 하위 도메인은 다시 닫지 않는다. |
+| 광고인데 닫히지 않았다 | "유지" 항목을 선택하고 **광고 도메인으로 등록**을 누른다. 그 탭이 아직 열려 있으면 바로 닫는다. |
+| 특정 사이트에서 광고가 자주 뜬다 | 그 사이트에서 열린 항목을 선택하고 **감시 사이트로 등록**을 누른다. 이후 그 사이트가 여는 탭을 더 적극적으로 판정한다. |
+
+항목을 선택하지 않으면 **다시 열기**와 **정상 사이트로 등록**은 가장 최근에 닫은 항목에 적용된다.
+
+### 4. 트레이에서 조용히 쓴다
+
+창을 최소화하거나 닫기(X)를 누르면 알림 영역 아이콘으로 숨는다. 광고를 막으면 Windows 알림이 뜬다(3초 안의 여러 건은 한 번에 알린다). 트레이 아이콘 메뉴에서 감시·관측 모드·Chrome 열기·로그 폴더 열기·종료를 할 수 있다. 완전히 종료할 때는 전용 Chrome도 닫을지 묻는다.
+
+**설정 → 일반 → Windows에 로그인하면 자동 실행**을 켜면 로그인할 때 트레이에 최소화된 상태로 시작한다.
+
+### 키보드 단축키
+
+| 키 | 동작 |
+|---|---|
+| Ctrl+M | 감시 켜기/일시중지 |
+| Ctrl+D | 관측 모드 켜기/끄기 |
+| Ctrl+O | 전용 Chrome 열기 |
+| Ctrl+L | 주소 입력란으로 이동 |
+| Ctrl+Z | 선택한(없으면 최근) 탭 다시 열기 |
+| Ctrl+, | 설정 열기 |
+| Ctrl+Q | 종료 |
+| Ctrl+S / Esc | 설정 창에서 저장 / 취소 |
 
 ## 판정 방식
 
-프로그램은 Chrome DevTools Protocol(CDP)로 새 탭을 감시한다. 각 페이지에는 클릭 의도만 수집하는 짧은 스크립트를 CDP로 주입한다.
+프로그램은 Chrome DevTools Protocol(CDP)로 전용 Chrome의 새 탭과 이동을 감시한다. 각 페이지에는 클릭 의도만 수집하는 짧은 스크립트를 페이지 스크립트가 볼 수 없는 격리 환경에 넣는다.
 
 | 상황 | 처리 |
 |---|---|
@@ -35,163 +133,69 @@ TabBouncer는 전용 Chrome 창만 감시한다. 평소 쓰는 Chrome 창은 건
 | 버튼 등 명시적인 컨트롤을 눌러 일반 외부 창이 열림 | 사용자 동작으로 가중치를 낮춰 유지 |
 | 사용자 동작 없이 외부 탭이 생성됨 | 광고 탭으로 판정 |
 | 주소창 입력, 새 탭 버튼 등 opener 없는 일반 탭 | 유지 |
-| 로그인, OAuth, 결제 흐름 또는 화이트리스트 도메인 | 유지 |
+| 로그인, OAuth, 결제 흐름 또는 정상 사이트 | 유지 |
 | 페이지 스크립트가 클릭 없이 현재 탭을 다른 사이트로 이동시킴 | 원래 페이지로 복귀 |
 | 주소창 입력, 북마크, 뒤로 가기로 현재 탭을 이동함 | 유지 |
 | TabBouncer가 연결되기 전부터 열려 있던 탭 | 유지 |
 
-클릭한 URL이 최초 요청과 일치하면 그 뒤 서버 리다이렉트를 거쳐도 같은 사용자 요청 탭으로 보호한다. 명시적으로 클릭한 링크라면 목적지가 알려진 광고 도메인이어도 닫지 않는다.
-
-새 탭·창뿐 아니라 **이미 보고 있던 탭 자체**가 스크립트에 의해 다른 사이트로 강제 이동되는 경우도 감시한다. 탭이 마지막으로 머문 페이지를 신뢰 기준으로 기록해 두고, 페이지(스크립트·링크·meta refresh)가 시작한 이동이 클릭 없이(또는 화면의 보이지 않는 요소를 클릭한 직후) 다른 사이트로 넘어가면 광고 리다이렉트로 보고 원래 URL로 되돌린다. 주소창 입력·북마크·뒤로 가기처럼 브라우저에서 직접 한 이동, 같은 사이트 안에서의 이동, 버튼을 눌러서 생긴 이동, 로그인·결제 흐름, 화이트리스트·허용 사이트로의 이동은 대상에서 제외한다. 같은 페이지가 30초 안에 계속 다시 리다이렉트하면 두 번 되돌린 뒤에는 이동을 허용해 무한 반복을 막는다. 이 기능은 `blockRedirectHijack`으로 끌 수 있다.
-
-## 요구 환경
-
-- Windows 11
-- Google Chrome 136 이상
-- .NET 10 Runtime 또는 SDK
-
-Chrome 136 이상에서는 원격 디버깅에 기본 Chrome 프로필을 쓸 수 없다. TabBouncer는 `%LOCALAPPDATA%\TabBouncer\ChromeProfile` 전용 프로필로 Chrome을 실행한다. 그래서 **광고 차단은 TabBouncer가 연 전용 Chrome 창과 그 창에서 연 탭·창에서만 동작하고, 평소 쓰는 Chrome 창은 보호되지 않는다.** 보고 싶은 사이트는 전용 창의 주소창에서 연다.
-
-## 프로젝트 구조
-
-소스 코드와 프로젝트 파일은 `src` 디렉토리에 있다.
-
-```
-src/
-  Program.cs         # 진입점과 CDP 감시·판정 로직
-  MainForm.cs        # Windows GUI
-  ConfigForm.cs      # 설정 편집 다이얼로그
-  TabBouncer.csproj  # 프로젝트 파일
-  config.json        # 기본 설정 템플릿
-tests/
-  browser-smoke.mjs  # 실제 Chrome을 구동하는 브라우저 스모크 테스트
-```
-
-## 빌드와 실행
-
-```powershell
-dotnet build src -c Release
-dotnet run --project src -c Release
-```
-
-단일 실행 파일을 만들려면 다음 명령을 사용한다.
-
-```powershell
-dotnet publish src -c Release -r win-x64 --self-contained false
-```
-
-생성 파일은 `bin\Release\win-x64\publish\tabbouncer.exe`에 있다. 실행하면 디버깅 포트 9222와 전용 프로필을 사용하는 Chrome을 자동으로 열고, 이 창에서 브라우징해야 차단된다는 안내 페이지를 보여준다(`startUrl`을 지정하면 그 주소를 연다). 이미 전용 Chrome이 떠 있으면 새로 띄우지 않고 그 Chrome에 연결한다.
-
-전용 Chrome 창을 모두 닫으면 TabBouncer는 Chrome을 다시 띄우지 않고 기다린다. 다시 감시하려면 GUI의 **"Chrome 열기"** 버튼을 누른다.
-
-TabBouncer는 Windows GUI 프로그램이다. 실행하면 창은 뜨지만 감시는 꺼진 상태이며, **"감시 시작" 버튼을 눌러야** 광고 탭을 판정하고 닫기 시작한다. 감시가 꺼져 있는 동안에는 프로그램 창 상단에 노란 경고 배너가 뜨고 창 제목이 "TabBouncer - 감시 꺼짐"으로 바뀐다. 전용 Chrome의 안내 페이지도 같은 상태를 실시간으로 보여주며, 꺼져 있으면 탭 제목 앞에 `[감시 꺼짐]`이 붙는다. 실행 창에서 Chrome 연결 상태와 최근 차단 내역을 확인하고 감시 상태를 바꿀 수 있다.
-
-테스트나 별도 인스턴스에서 설정과 프로필 위치를 분리하려면 `--data-dir=C:\원하는\경로`를 지정한다.
-Chrome에 추가 실행 인수가 필요하면 생성된 설정의 `chromeArguments` 배열에 넣는다.
-
-## 사용 방법
-
-### 1. TabBouncer를 실행하고 감시를 시작한다
-
-프로그램을 실행하면 감시는 안전을 위해 항상 꺼진 상태로 시작한다. 노란 안내 영역과 **감시 상태: 일시중지**를 확인한 뒤, 왼쪽의 **"감시 시작"** 버튼을 누른다. Chrome이 연결되어 있지 않으면 오른쪽의 **"Chrome 열기"** 버튼으로 전용 Chrome 창을 연다.
-
-![감시가 꺼진 초기 TabBouncer 창. 감시 시작 버튼, Chrome 열기 버튼, 관측 모드 선택과 최근 차단 목록이 보인다.](docs/images/001.png)
-
-감시를 시작하면 상태가 **감시 중**으로 바뀌고, 이후 전용 Chrome에서 새로 생기는 탭과 창을 판정한다. 처음에는 **관측 모드(탭을 닫지 않음)** 를 켜서 어떤 항목이 차단 대상인지 활동 로그로 확인해도 된다.
-
-### 2. 전용 Chrome 창에서 웹을 연다
-
-TabBouncer가 여는 Chrome은 일반 Chrome 프로필과 분리된 전용 창이다. 이 창의 주소창에 방문할 사이트를 입력해 사용한다. 안내 페이지가 보이면 보호 창이 정상적으로 열려 있다는 뜻이다.
-
-![TabBouncer 전용 Chrome의 보호 안내 페이지. 감시가 꺼진 상태와 주소창에서 사이트를 여는 방법을 안내한다.](docs/images/002.png)
-
-이 전용 창에서 사용자 의도로 연 링크와 버튼 동작은 최대한 유지한다. 반면 클릭과 무관하게 열리거나, 클릭한 목적지와 다른 외부 탭으로 함께 열린 광고성 팝업은 닫는다. 현재 보던 탭이 자동으로 외부 사이트로 이동하면 원래 페이지로 되돌린다.
-
-### 3. 차단 결과를 확인하고 예외를 등록한다
-
-TabBouncer 창의 **최근 차단한 탭**에서 주소, 점수, 판정 사유를 확인한다. 정상 사이트가 잘못 닫혔다면 항목을 선택한 뒤 **"다시 열기"**로 복구하거나 **"정상 사이트로 등록"**으로 해당 도메인과 하위 도메인을 허용한다. 설정을 직접 바꾸려면 **"설정 열기"**에서 `config.json`을 저장하면 즉시 다시 읽는다.
+점수표, 시간 기준, 예외 규칙, 한계는 [판정 방식 상세](docs/how-it-works.md)에 있다.
 
 ## 설정
 
-첫 실행 때 **실행 파일과 같은 폴더**에 `config.json`을 만든다. 실행 중 파일을 저장하면 변경 사항을 자동으로 다시 읽는다. `config.json`의 `enabled` 값과 무관하게, 프로그램을 실행할 때마다 감시는 항상 꺼진 상태로 시작하고 GUI의 "감시 시작" 버튼을 눌러야 켜진다. 실행 중에 설정을 저장해 다시 읽어도 감시 켜짐·꺼짐 상태는 바뀌지 않는다. 자동화된 테스트 등 GUI 조작 없이 바로 감시를 켜야 하면 `--auto-start` 인수를 추가한다.
+**설정 열기**를 누르면 일반, 사이트 목록, 고급(JSON) 탭으로 `config.json`을 편집한다. 저장하면 검사한 뒤 바로 적용한다. 파일을 직접 고쳐 저장해도 자동으로 다시 읽는다.
 
-로그와 Chrome 전용 프로필은 `%LOCALAPPDATA%\TabBouncer`에 저장한다. 프로그램은 콘솔 창이 없으므로 활동 로그는 화면 표시 없이 `tabbouncer.log`(사람이 읽는 로그)와 `events.jsonl`(판정 이벤트, 관측 모드에서 특히 유용)에 텍스트로 남는다.
+![설정 창의 일반 탭. 감시와 판정 옵션이 설명과 함께 보인다.](docs/images/003.png)
 
-광고가 자주 생기는 사이트를 `watchedSites`에 추가하면 알려지지 않은 광고망도 더 적극적으로 차단한다.
-항상 정상으로 취급할 사이트는 `allowedSites`에 등록한다. 등록한 도메인과 모든 하위 도메인의 탭·새 창은 광고 점수와 관계없이 닫지 않는다.
+자주 쓰는 항목은 다음과 같다.
 
 ```json
 {
   "dryRun": false,
-  "strictMode": false,
-  "protectExplicitClicks": true,
-  "blockAutomaticCrossSitePopups": true,
-  "blockRedirectHijack": true,
-  "closeThreshold": 80,
-  "allowedSites": [
-    "my-safe-site.example"
-  ],
-  "watchedSites": [
-    "problem-site.example"
-  ]
+  "allowedSites": ["my-safe-site.example"],
+  "watchedSites": ["problem-site.example"],
+  "favoriteSites": ["https://problem-site.example/"]
 }
 ```
 
-`dryRun`은 탭을 실제로 닫지 않고 판정 결과만 GUI 활동 목록과 `events.jsonl`에 기록하는 관찰 모드다. 처음 관찰만 하려면 GUI에서 관측 모드를 켜거나 `dryRun`을 `true`로 바꾸거나 `--dry-run` 인수를 사용한다. `false`이면 종료 조건을 만족한 탭을 실제로 닫는다. `strictMode`는 정상 팝업 오탐 가능성을 높이므로 기본값을 유지하는 편이 좋다.
+- `dryRun`은 관측 모드다. 탭을 닫지 않고 판정 결과만 기록한다.
+- `allowedSites`에 넣은 도메인과 하위 도메인은 항상 유지한다.
+- `watchedSites`는 광고가 자주 뜨는 사이트다. 이 사이트가 여는 탭을 더 적극적으로 판정한다.
+- `favoriteSites`는 안내 페이지의 바로가기다.
 
-## GUI 기능
+모든 키와 기본값은 [설정 레퍼런스](docs/config.md), 명령줄 인수는 [명령줄 인수](docs/cli.md)에 있다.
 
-- Chrome 연결, 감시 상태, 작동 모드, 최근 차단 수 확인
-- 감시 시작, 일시중지, 재개
-- 감시가 꺼져 있으면 상단 경고 배너와 창 제목으로 표시
-- 전용 Chrome이 닫혀 있을 때 "Chrome 열기"로 다시 실행
-- 실제 종료와 관측 모드 전환
-- 마지막으로 닫은 탭 다시 열기
-- 마지막으로 닫은 도메인을 정상 사이트로 등록
-- "설정 열기" 버튼으로 프로그램 안에서 `config.json`을 직접 편집하고 저장(저장하면 자동으로 다시 적용)
+## 문제 해결과 도움말
 
-종료 횟수 제한은 없다. 짧은 시간에 광고 탭이나 창이 10개 이상 생성돼도 광고로 판정되는 항목은 모두 닫는다. 브라우저의 마지막 일반 탭은 닫지 않는다.
+- [문제 해결](docs/troubleshooting.md): 광고가 안 닫힐 때, 정상 탭이 닫힐 때, Chrome에 연결되지 않을 때
+- [자주 묻는 질문](docs/faq.md): 왜 확장이 아닌지, 평소 Chrome은 왜 보호하지 않는지, 광고 차단 확장과 같이 써도 되는지
+- [로그 읽는 법](docs/logs.md): `tabbouncer.log`와 `events.jsonl` 형식
+- 버그·오탐·미탐 신고는 [Issues](https://github.com/jacking75/TabBouncer/issues/new/choose)에 한다. TabBouncer 창의 **진단 정보 복사**로 버전과 설정 요약을 붙여 넣으면 빨리 확인할 수 있다.
 
-## 자체 테스트
+## 개인정보와 보안
+
+- TabBouncer는 네트워크로 아무것도 보내지 않는다. 업데이트 확인이나 사용 통계 수집도 없다.
+- 활동 로그와 판정 이벤트는 이 PC의 `%LOCALAPPDATA%\TabBouncer`에만 남는다. 로그에는 방문한 주소가 들어 있으므로 공유하기 전에 지운다. 각 로그 파일은 5MB를 넘으면 이전 파일 두 개까지만 남긴다.
+- 전용 Chrome의 디버깅 포트는 `127.0.0.1`에만 열린다. 다만 같은 PC에서 실행 중인 다른 프로그램은 이 포트로 전용 Chrome을 제어할 수 있다. 신뢰하지 않는 프로그램이 도는 PC에서는 전용 창에서 중요한 계정에 로그인하지 않는다.
+- 전용 프로필은 평소 Chrome 프로필과 분리돼 있어 비밀번호·확장·북마크를 공유하지 않는다.
+
+## 제거
+
+1. 트레이 아이콘 메뉴에서 **종료**를 누른다.
+2. 자동 실행을 켰다면 먼저 **설정 → 일반 → Windows에 로그인하면 자동 실행**을 끄고 저장한다. 이미 폴더를 지웠다면 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`의 `TabBouncer` 값을 지운다.
+3. 압축을 푼 프로그램 폴더를 지운다.
+4. `%LOCALAPPDATA%\TabBouncer` 폴더를 지운다. 전용 Chrome 프로필, 로그, 통계가 함께 지워진다.
+5. 바로가기를 만들었다면 바탕화면의 `TabBouncer - 사이트.lnk`를 지운다.
+
+## 개발자용
 
 ```powershell
+dotnet build src -c Release
 dotnet run --project src -c Release -- --self-test
-```
-
-클릭 URL 일치, 별도 광고 탭, 버튼 팝업, 버튼으로 열린 등록 광고 도메인, 자동 외부 팝업, opener 없는 탭, 로그인 흐름, 등록한 정상 사이트 보호, 현재 탭 리다이렉트 하이재킹 차단(같은 사이트 이동·버튼 이동·로그인 흐름 제외 포함)을 검사한다. 판정 점수 계산을 확인하는 단위 검사이며, 실제 Chrome 이벤트 흐름은 아래 스모크 테스트가 다룬다.
-
-실제 Chrome을 headless 모드로 실행하는 브라우저 스모크 테스트는 빌드 후 다음과 같이 실행한다. Node.js 22 이상이 필요하다.
-
-```powershell
 node .\tests\browser-smoke.mjs
 ```
 
-## 판별 한계
+빌드 결과는 `bin\Release`에 생긴다. 소스 구조, 코드 읽는 순서, 기여 규칙은 [CONTRIBUTING.md](CONTRIBUTING.md)에 있다. 변경 이력은 [CHANGELOG.md](CHANGELOG.md)에 있다.
 
-웹페이지의 임의 JavaScript 버튼이 여는 창은 사람이 기대한 결과인지 코드만으로 완벽하게 알 수 없다. TabBouncer는 실제 링크 목적지가 있으면 정확히 대조하고, 일반 버튼은 사용자 의도로 우선 보호한다. 특정 정상 서비스가 잘못 닫히면 GUI의 "정상 사이트로 등록" 버튼을 누르거나 `allowedSites`에 도메인을 추가한다.
+## 라이선스
 
-현재 탭 리다이렉트 하이재킹 차단도 같은 한계를 가진다. 클릭 없이 다른 사이트로 자동 이동하는 정상 서비스(세션 만료 안내, 자동 로그아웃 이동 등)를 오탐할 수 있으며, 이때도 `allowedSites` 등록이나 `blockRedirectHijack` 끄기로 대응한다.
-
-## 코드를 이해하거나 확장하려면
-
-TabBouncer는 Windows Forms UI 위에 Chrome DevTools Protocol(CDP) 감시 엔진을 둔 단일 실행 파일 구조다. `Program.cs`가 앱의 중심이며, Chrome 연결·CDP 이벤트 처리·사용자 클릭 의도 수집·광고 점수 판정·탭 종료·설정과 로그를 함께 관리한다. UI는 엔진 상태를 표시하고 사용자의 명령을 전달하는 역할에 집중한다.
-
-```mermaid
-flowchart LR
-    Chrome[전용 Chrome] <-->|CDP WebSocket| Cdp[CdpClient]
-    Cdp --> Engine[Program.cs\n감시 엔진]
-    Engine --> Intent[클릭 의도 수집]
-    Engine --> Judge[점수 판정과 탭 종료\n리다이렉트 복구]
-    Engine --> Storage[config.json\n로그와 이벤트]
-    Engine --> UI[MainForm.cs\nWindows Forms UI]
-    UI -->|감시, 재실행, 복구, 허용| Engine
-```
-
-처음 볼 때는 다음 순서가 가장 빠르다.
-
-1. [Program.cs](src/Program.cs)의 `Main`, `RunEngineAsync`, `RunSessionAsync`로 시작과 Chrome 연결 수명 주기를 본다.
-2. 같은 파일의 `CdpClient`와 `OnCdpEvent`에서 CDP 메시지를 요청·수신하고 페이지 이벤트로 분기하는 방식을 확인한다.
-3. `HandleIntentBinding`, `AssessIntent`, `EvaluateAsync`, `Score`를 따라가면 클릭 의도와 새 탭 URL을 대조해 점수를 만들고 `Target.closeTarget`으로 종료하는 핵심 흐름을 이해할 수 있다.
-4. 현재 탭 강제 이동 기능은 `HandleFrameNavigated`, `EvaluateRedirectHijackAsync`, `ScoreRedirectHijack`에 있다. 새 탭 판정과 별도로 원래 URL로 되돌리는 경로다.
-5. [MainForm.cs](src/MainForm.cs)는 상태 카드, 최근 차단 목록, 감시·관측 모드·Chrome 재실행 버튼을 만들고 `Program`의 공개 메서드를 호출한다. [ConfigForm.cs](src/ConfigForm.cs)는 `config.json` 편집과 JSON 검증 UI만 담당한다.
-6. 설정 항목을 추가한다면 [config.json](src/config.json)과 `Config`를 먼저 맞추고, 판정에 쓰는 값이면 `Score` 또는 `ScoreRedirectHijack`과 자체 테스트를 함께 수정한다. 실제 Chrome 이벤트 흐름은 [browser-smoke.mjs](tests/browser-smoke.mjs)에서 재현하고 검증한다.
+[MIT License](LICENSE)
