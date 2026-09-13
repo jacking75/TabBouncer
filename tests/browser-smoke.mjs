@@ -271,6 +271,13 @@ async function click(client, selector) {
     awaitPromise: true
   });
   const point = result.result.value;
+  if (!point) {
+    const page = await client.send('Runtime.evaluate', {
+      expression: "location.href + ' | ' + document.documentElement.outerHTML.slice(0, 300)",
+      returnByValue: true
+    });
+    throw new Error(`클릭 좌표를 구하지 못했다(${selector}): ${page.result.value}`);
+  }
   await client.send('Input.dispatchMouseEvent', {
     type: 'mouseMoved', x: point.x, y: point.y
   });
@@ -290,8 +297,10 @@ async function currentUrl(client) {
 }
 
 async function trackerReady(client) {
+  // 첫 탭은 실제 문서가 커밋되기 전까지 about:blank에 추적 스크립트가 먼저 설치된다.
   const result = await client.send('Runtime.evaluate', {
-    expression: "document.__tabBouncerIntentTrackerInstalledV1 === true",
+    expression: "location.href !== 'about:blank' && document.readyState === 'complete' && " +
+      "document.__tabBouncerIntentTrackerInstalledV1 === true",
     returnByValue: true
   });
   return result.result.value === true;

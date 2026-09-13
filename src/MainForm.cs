@@ -16,7 +16,12 @@ internal sealed class MainForm : Form
     private static readonly Color TextSecondary = Color.FromArgb(102, 112, 133);
     private static readonly Color Success = Color.FromArgb(22, 163, 74);
     private static readonly Color Warning = Color.FromArgb(217, 119, 6);
+    private static readonly Color BannerBackground = Color.FromArgb(254, 243, 199);
+    private static readonly Color BannerText = Color.FromArgb(146, 64, 14);
+    private const int BannerHeight = 48;
 
+    private readonly Label _monitoringBanner = new();
+    private readonly RowStyle _bannerRow = new(SizeType.Absolute, BannerHeight);
     private readonly Label _connectionDot = new();
     private readonly Label _connectionText = new();
     private readonly Label _monitoringValue = new();
@@ -38,7 +43,7 @@ internal sealed class MainForm : Form
         Text = "TabBouncer";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(820, 620);
-        Size = new Size(920, 680);
+        Size = new Size(920, 720);
         BackColor = Background;
         ForeColor = TextPrimary;
         Font = new Font("Segoe UI", 9F);
@@ -64,20 +69,35 @@ internal sealed class MainForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(28, 24, 28, 20),
             ColumnCount = 1,
-            RowCount = 5
+            RowCount = 6
         };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
+        root.RowStyles.Add(_bannerRow);
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 104));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
 
         root.Controls.Add(BuildHeader(), 0, 0);
-        root.Controls.Add(BuildSummary(), 0, 1);
-        root.Controls.Add(BuildActions(), 0, 2);
-        root.Controls.Add(BuildRecentSection(), 0, 3);
-        root.Controls.Add(BuildActivitySection(), 0, 4);
+        root.Controls.Add(BuildMonitoringBanner(), 0, 1);
+        root.Controls.Add(BuildSummary(), 0, 2);
+        root.Controls.Add(BuildActions(), 0, 3);
+        root.Controls.Add(BuildRecentSection(), 0, 4);
+        root.Controls.Add(BuildActivitySection(), 0, 5);
         return root;
+    }
+
+    private Control BuildMonitoringBanner()
+    {
+        _monitoringBanner.Dock = DockStyle.Fill;
+        _monitoringBanner.Margin = new Padding(0, 0, 0, 6);
+        _monitoringBanner.Padding = new Padding(14, 0, 14, 0);
+        _monitoringBanner.BackColor = BannerBackground;
+        _monitoringBanner.ForeColor = BannerText;
+        _monitoringBanner.Font = new Font("Segoe UI Semibold", 11F);
+        _monitoringBanner.TextAlign = ContentAlignment.MiddleLeft;
+        _monitoringBanner.Text = "감시가 꺼져 있다. \"감시 시작\"을 눌러야 광고 탭·창을 막는다.";
+        return _monitoringBanner;
     }
 
     private Control BuildHeader()
@@ -278,6 +298,16 @@ internal sealed class MainForm : Form
         _scopeValue.Text = $"감시 범위: {snapshot.WatchedSites}  ·  차단 기준: {snapshot.CloseThreshold}점";
         _monitoringButton.Text = snapshot.Enabled ? "감시 일시중지" : "감시 시작";
         _openChromeButton.Enabled = snapshot.CanOpenChrome;
+
+        bool showBanner = !snapshot.Enabled;
+        if (_monitoringBanner.Visible != showBanner)
+        {
+            _monitoringBanner.Visible = showBanner;
+            _bannerRow.Height = showBanner ? BannerHeight : 0;
+        }
+        string title = snapshot.Enabled ? "TabBouncer" : "TabBouncer - 감시 꺼짐";
+        if (Text != title)
+            Text = title;
 
         if (_dryRunCheck.Checked != snapshot.DryRun)
         {

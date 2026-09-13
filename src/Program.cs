@@ -482,8 +482,13 @@ internal static class Program
           h1 { margin: 0 0 12px; font-size: 24px; }
           p, li { color: #475467; line-height: 1.8; }
           strong { color: #2563eb; }
+          #state { margin: 0 0 20px; padding: 16px 18px; border-radius: 10px;
+                   font-size: 18px; font-weight: 600; line-height: 1.6; }
+          #state.off { background: #fef3c7; color: #92400e; }
+          #state.on { background: #dcfce7; color: #166534; }
         </style>
         <main>
+          <div id="state"></div>
           <h1>TabBouncer 보호 창</h1>
           <p>이 창은 TabBouncer가 연 <strong>전용 Chrome</strong>이다.
              광고 탭·창 차단은 <strong>이 창과 이 창에서 연 탭·창에서만</strong> 동작한다.</p>
@@ -493,6 +498,17 @@ internal static class Program
             <li>이 창을 모두 닫으면 감시할 대상이 사라진다. 다시 열려면 TabBouncer의 <strong>Chrome 열기</strong>를 누른다.</li>
           </ul>
         </main>
+        <script>
+          window.__tabBouncerSetMonitoring = on => {
+            const state = document.getElementById('state');
+            state.className = on ? 'on' : 'off';
+            state.textContent = on
+              ? '감시 중이다. 이 창에서 생기는 광고 탭·창을 막는다.'
+              : '감시가 꺼져 있다. TabBouncer 창에서 "감시 시작"을 눌러야 광고 탭·창을 막는다.';
+            document.title = (on ? '' : '[감시 꺼짐] ') + 'TabBouncer 보호 창';
+          };
+          window.__tabBouncerSetMonitoring(window.__tabBouncerMonitoring ?? {{MONITORING}});
+        </script>
         </html>
         """;
 
@@ -772,18 +788,48 @@ internal static class Program
         Process.Start(startInfo);
     }
 
+    private static string GuidePagePath => Path.Combine(_dataDirectory, "start.html");
+    private static string GuidePageUrl => new Uri(GuidePagePath).AbsoluteUri;
+
     private static string WriteGuidePage()
     {
-        string path = Path.Combine(_dataDirectory, "start.html");
         try
         {
-            File.WriteAllText(path, GuidePageHtml, new UTF8Encoding(false));
-            return new Uri(path).AbsoluteUri;
+            string html = GuidePageHtml.Replace("{{MONITORING}}", _config.Enabled ? "true" : "false");
+            File.WriteAllText(GuidePagePath, html, new UTF8Encoding(false));
+            return GuidePageUrl;
         }
         catch (Exception ex)
         {
             Warning("안내 페이지를 만들지 못했다: " + ex.Message);
             return "";
+        }
+    }
+
+    // 안내 페이지는 파일이라 감시 상태를 스스로 알 수 없다. 페이지 로드와 감시 전환 때마다 CDP로 알려준다.
+    private static void PushMonitoringStateToGuide(string? sessionId = null)
+    {
+        CdpClient? client = _cdp;
+        if (client is null)
+            return;
+
+        string guideUrl = GuidePageUrl;
+        string value = _config.Enabled ? "true" : "false";
+        foreach (TargetRecord target in Targets.Values)
+        {
+            if (target.SessionId is not { } targetSession ||
+                (sessionId is not null && targetSession != sessionId) ||
+                !target.Url.StartsWith(guideUrl, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            client.Fire(
+                "Runtime.evaluate",
+                new JsonObject
+                {
+                    ["expression"] =
+                        $"window.__tabBouncerMonitoring = {value}; window.__tabBouncerSetMonitoring?.({value});"
+                },
+                targetSession);
         }
     }
 
@@ -838,6 +884,10 @@ internal static class Program
 
                 case "Page.frameNavigated":
                     HandleFrameNavigated(parameters, sessionId);
+                    break;
+
+                case "Page.loadEventFired":
+                    PushMonitoringStateToGuide(sessionId);
                     break;
 
                 case "Network.requestWillBeSent":
@@ -1007,7 +1057,7 @@ internal static class Program
                     ["returnByValue"] = false
                 },
                 sessionId);
-
+            PushMonitoringStateToGuide(sessionId);
         }
         catch (Exception ex)
         {
@@ -1748,13 +1798,17 @@ internal static class Program
         return value.Length <= maximum ? value : value[..maximum] + "…";
     }
 
+    // 감시 켜기/끄기는 GUI에서만 바꾼다. 설정 파일을 다시 읽어도 현재 감시 상태는 유지한다.
     private static void LoadOrCreateConfig()
     {
+        bool enabled = _config.Enabled;
         try
         {
             if (!File.Exists(ConfigPath))
             {
-                _config = Config.Defaults();
+                Config defaults = Config.Defaults();
+                defaults.Enabled = enabled;
+                _config = defaults;
                 SaveConfig();
                 return;
             }
@@ -1762,12 +1816,17 @@ internal static class Program
             Config? loaded = JsonSerializer.Deserialize<Config>(
                 File.ReadAllText(ConfigPath, Encoding.UTF8), JsonOptions);
             if (loaded is not null)
+            {
+                loaded.Enabled = enabled;
                 _config = loaded;
+            }
         }
         catch (Exception ex)
         {
             Error("설정을 읽지 못해 기본값을 사용한다: " + ex.Message);
-            _config = Config.Defaults();
+            Config defaults = Config.Defaults();
+            defaults.Enabled = enabled;
+            _config = defaults;
         }
     }
 
@@ -1939,6 +1998,7 @@ internal static class Program
     {
         _config.Enabled = !_config.Enabled;
         Info("감시 " + (_config.Enabled ? "재개" : "일시중지"));
+        PushMonitoringStateToGuide();
     }
 
     internal static void SetDryRun(bool enabled)
