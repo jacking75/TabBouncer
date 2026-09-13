@@ -66,7 +66,7 @@ internal static partial class Program
 
             if (intent.Approved)
             {
-                Info($"사용자 요청 탭 유지 [{intent.Reason}] {Shorten(url)}");
+                Info(L.Format("log.userApproved", intent.Reason, Shorten(url)));
                 WriteEvent(new
                 {
                     stage = "user-approved",
@@ -118,7 +118,7 @@ internal static partial class Program
                 }
             }
             if (score >= _config.CloseThreshold - 30)
-                Info($"유지 {score}점 [{reason}] {Shorten(url)}");
+                Info(L.Format("log.kept", score, reason, Shorten(url)));
             return false;
         }
 
@@ -127,7 +127,7 @@ internal static partial class Program
 
         if (_config.DryRun)
         {
-            Warning($"[DRY-RUN] 종료 대상 {score}점 [{reason}] {Shorten(url)}");
+            Warning(L.Format("log.dryRunClose", score, reason, Shorten(url)));
             RecordItem(new ClosedItem(url, openerUrl, score, reason, DateTime.Now,
                 ClosedKind.Observed, result.Breakdown, page.TargetId));
             WriteEvent(new
@@ -146,7 +146,7 @@ internal static partial class Program
             target.Type == "page" && !IsInternal(target.Url));
         if (normalPages <= 1)
         {
-            Warning("마지막 일반 탭이므로 종료하지 않는다: " + Shorten(url));
+            Warning(L.Format("log.lastTab", Shorten(url)));
             return false;
         }
 
@@ -158,7 +158,7 @@ internal static partial class Program
                 null,
                 3000).ConfigureAwait(false);
 
-            Success($"자동 광고 탭 종료 {score}점 [{reason}] {Shorten(url)}");
+            Success(L.Format("log.closed", score, reason, Shorten(url)));
             WriteEvent(new
             {
                 stage = "closed",
@@ -182,7 +182,7 @@ internal static partial class Program
         }
         catch (Exception ex)
         {
-            Error("탭 종료 실패: " + ex.Message);
+            Error(L.Format("log.closeFailed", ex.Message));
             return false;
         }
     }
@@ -220,7 +220,7 @@ internal static partial class Program
 
         if (_config.DryRun)
         {
-            Warning($"[DRY-RUN] 리다이렉트 차단 대상 {score}점 [{reason}] {Shorten(newUrl)}");
+            Warning(L.Format("log.dryRunRedirect", score, reason, Shorten(newUrl)));
             WriteEvent(new
             {
                 stage = "redirect-dry-run",
@@ -242,7 +242,7 @@ internal static partial class Program
         if (attempts >= 2)
         {
             // 되돌린 페이지가 스스로 다시 이동하면 무한 반복된다. 두 번 막은 뒤에는 이동을 허용한다.
-            Warning($"같은 페이지에서 리다이렉트가 반복돼 더 막지 않는다 {score}점 [{reason}] {Shorten(newUrl)}");
+            Warning(L.Format("log.redirectRepeating", score, reason, Shorten(newUrl)));
             page.RevertedFromUrl = "";
             page.RevertCount = 0;
             page.CommittedUrl = newUrl;
@@ -261,7 +261,7 @@ internal static partial class Program
                 sessionId,
                 3000).ConfigureAwait(false);
 
-            Success($"광고 리다이렉트 차단, 이전 페이지로 복귀 {score}점 [{reason}] {Shorten(newUrl)}");
+            Success(L.Format("log.redirectBlocked", score, reason, Shorten(newUrl)));
             WriteEvent(new
             {
                 stage = "redirect-blocked",
@@ -277,7 +277,7 @@ internal static partial class Program
         catch (Exception ex)
         {
             page.CommittedUrl = newUrl;
-            Error("리다이렉트 복구 실패: " + ex.Message);
+            Error(L.Format("log.redirectRestoreFailed", ex.Message));
         }
     }
 

@@ -5,8 +5,8 @@ using System.Linq;
 
 namespace TabBouncer;
 
-// 판정 사유 코드를 화면 문구로 바꾼다. 문구는 Strings.cs의 "reason.<코드>" 키에 있다.
-// 코드를 추가하면 Strings.cs와 docs/how-it-works.md의 점수표도 함께 고친다.
+// 판정 사유 코드를 화면 문구로 바꾼다. 문구는 languages.json의 "reason.<코드>" 키에 있다.
+// 코드를 추가하면 languages.json의 모든 언어와 docs/how-it-works.md의 점수표도 함께 고친다.
 internal static class Reasons
 {
     internal static string Describe(string code)

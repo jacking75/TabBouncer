@@ -95,13 +95,13 @@ internal static partial class Program
                 {
                     loaded.Resolve();
                     if (SaveConfigFile(loaded))
-                        Info("adDomains에서 내장 광고 목록과 겹치는 항목을 정리했다. 내장 목록은 항상 함께 적용된다.");
+                        Info(L.T("log.adDomainsMigrated"));
                 }
             }
         }
         catch (Exception ex)
         {
-            Error("설정을 읽지 못해 기본값을 사용한다: " + ex.Message);
+            Error(L.Format("log.configLoadFailed", ex.Message));
             loaded = Config.Defaults();
         }
 
@@ -152,7 +152,7 @@ internal static partial class Program
         }
         catch (Exception ex)
         {
-            Error("설정 저장 실패: " + ex.Message);
+            Error(L.Format("log.configSaveFailed", ex.Message));
             return false;
         }
     }
@@ -206,7 +206,7 @@ internal static partial class Program
                     await Task.Delay(150).ConfigureAwait(false);
                     LoadOrCreateConfig();
                     PushStateToGuide();
-                    Info("설정을 다시 읽었다.");
+                    Info(L.T("log.configReloaded"));
                 });
             };
             _configWatcher.Changed += reload;
@@ -215,7 +215,7 @@ internal static partial class Program
         }
         catch (Exception ex)
         {
-            Warning("설정 자동 다시 읽기를 시작하지 못했다: " + ex.Message);
+            Warning(L.Format("log.configWatchFailed", ex.Message));
         }
     }
 
@@ -294,11 +294,13 @@ internal static partial class Program
 
     private static void WriteStartupLog()
     {
-        Info($"TabBouncer v{Version} 시작 (Windows {Environment.OSVersion.Version}, .NET {Environment.Version})");
-        Info("설정 파일: " + ConfigPath);
-        Info("데이터 폴더: " + _dataDirectory);
+        Info(L.Format("log.startup", Version, Environment.OSVersion.Version, Environment.Version));
+        Info(L.Format("log.configPath", ConfigPath));
+        Info(L.Format("log.dataDirectory", _dataDirectory));
         if (_configDirectoryFallback)
-            Warning("실행 파일 폴더에 쓸 수 없어 설정을 데이터 폴더에 저장한다.");
+            Warning(L.T("log.configFallback"));
+        if (L.LoadError.Length > 0)
+            Warning(L.Format("log.languageFileFailed", L.LoadError));
     }
 
     internal static IReadOnlyList<string> ReadLogTail(int lines)

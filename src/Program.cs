@@ -210,7 +210,7 @@ internal static partial class Program
         }
         catch (Exception ex)
         {
-            Warning("다른 실행에서 넘긴 주소를 읽지 못했다: " + ex.Message);
+            Warning(L.Format("log.pendingUrlFailed", ex.Message));
         }
     }
 
@@ -230,7 +230,7 @@ internal static partial class Program
             }
             catch (Exception ex)
             {
-                Error("세션 오류: " + ex.Message);
+                Error(L.Format("log.sessionError", ex.Message));
             }
 
             if (cancellationToken.IsCancellationRequested)
@@ -247,7 +247,7 @@ internal static partial class Program
         }
 
         SetConnectionState(false, L.T("status.stopped"));
-        Info("종료한다.");
+        Info(L.T("log.exiting"));
     }
 
     // 사용자가 전용 Chrome을 닫았는데 다시 띄우면 창이 끝없이 되살아난다.
@@ -271,7 +271,7 @@ internal static partial class Program
                     announced = true;
                     _waitingForChrome = true;
                     SetConnectionState(false, L.T("status.chromeClosed"));
-                    Info("전용 Chrome이 실행 중이 아니다. 'Chrome 열기'를 누르면 다시 연다.");
+                    Info(L.T("log.chromeNotRunning"));
                     PushStateToGuide();
                 }
 
@@ -364,11 +364,11 @@ internal static partial class Program
             }
 
             if (webSocketUrl is null)
-                throw new TimeoutException("Chrome 디버깅 포트에 연결하지 못했다.");
+                throw new TimeoutException(L.T("error.chromeConnectTimeout"));
         }
         else
         {
-            Info("이미 실행 중인 디버깅 Chrome에 접속한다.");
+            Info(L.T("log.attachExisting"));
         }
 
         Targets.Clear();
@@ -389,14 +389,14 @@ internal static partial class Program
         {
             string detail = exception is null ? "" : " (" + exception.Message + ")";
             SetConnectionState(false, L.T("status.disconnected"));
-            Warning("Chrome 연결이 끊어졌다." + detail);
+            Warning(L.T("log.disconnected") + detail);
             disconnected.TrySetResult(true);
         };
         client.EventReceived += OnCdpEvent;
 
         await client.ConnectAsync(webSocketUrl, cancellationToken).ConfigureAwait(false);
         await ReadBrowserVersionAsync(client).ConfigureAwait(false);
-        Success("Chrome에 연결했다." + (_browserVersion.Length > 0 ? " (" + _browserVersion + ")" : ""));
+        Success(L.T("log.connected") + (_browserVersion.Length > 0 ? " (" + _browserVersion + ")" : ""));
         SetConnectionState(true, L.T("status.connected"));
 
         await client.SendAsync(
@@ -417,9 +417,7 @@ internal static partial class Program
                 ["flatten"] = true
             }).ConfigureAwait(false);
 
-        Info(_config.PreemptiveBlock
-            ? "선차단과 사용자 클릭 추적을 시작했다."
-            : "사용자 클릭 추적을 시작했다.");
+        Info(L.T(_config.PreemptiveBlock ? "log.trackingWithPreempt" : "log.tracking"));
 
         if (!launched && _startUrlFromArgument.Length > 0)
             PendingOpenUrls.Enqueue(_startUrlFromArgument);
@@ -440,7 +438,7 @@ internal static partial class Program
         while (PendingOpenUrls.TryDequeue(out string? url))
         {
             client.Fire("Target.createTarget", new JsonObject { ["url"] = url, ["newWindow"] = false });
-            Info("전용 Chrome에서 주소를 열었다: " + Shorten(url));
+            Info(L.Format("log.urlOpened", Shorten(url)));
         }
     }
 

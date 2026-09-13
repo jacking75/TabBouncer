@@ -23,7 +23,6 @@ internal sealed class Config
     };
 
     internal static readonly string[] CloseChromeChoices = { "ask", "always", "never" };
-    internal static readonly string[] LanguageChoices = { "", "ko", "en" };
 
     public bool Enabled { get; set; } = true;
     public bool DryRun { get; set; }
@@ -101,9 +100,7 @@ internal sealed class Config
         CloseChromeOnExit = CloseChromeChoices.Contains(CloseChromeOnExit?.Trim().ToLowerInvariant())
             ? CloseChromeOnExit!.Trim().ToLowerInvariant()
             : "ask";
-        Language = LanguageChoices.Contains(Language?.Trim().ToLowerInvariant())
-            ? Language!.Trim().ToLowerInvariant()
-            : "";
+        Language = L.NormalizeLanguage(Language);
 
         var removed = new HashSet<string>(
             RemovedAdDomains.Select(NormalizeDomain).Where(value => value.Length > 0),

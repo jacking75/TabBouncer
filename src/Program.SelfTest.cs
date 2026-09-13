@@ -2,6 +2,7 @@
 
 using System;
 using System.IO;
+using System.Linq;
 
 namespace TabBouncer;
 
@@ -130,8 +131,18 @@ internal static partial class Program
             return AssessRecentIntents("https://tool.example/", intents).UserControl;
         });
 
+        Check("언어 표는 한국어가 기본이고 영어가 있으며 모든 언어의 키와 자리표시자가 같음", () =>
+        {
+            foreach (string problem in L.FindTableProblems())
+                Console.WriteLine("  " + problem);
+            return L.DefaultLanguage == "ko" &&
+                   L.NormalizeLanguage("EN") == "en" &&
+                   L.Languages.Count >= 2 &&
+                   !L.FindTableProblems().Any();
+        });
+
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"자체 테스트 통과: {passed}/16");
+        Console.WriteLine($"자체 테스트 통과: {passed}/17");
         Console.ResetColor();
         return 0;
 

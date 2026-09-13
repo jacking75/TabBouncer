@@ -60,7 +60,7 @@ internal static partial class Program
         }
         catch (Exception ex)
         {
-            Error($"CDP 이벤트 처리 오류({method}): {ex.Message}");
+            Error(L.Format("log.cdpEventError", method, ex.Message));
         }
     }
 
@@ -207,7 +207,7 @@ internal static partial class Program
             // 광고 탭을 닫으면 초기화 중이던 명령이 실패한다. 탭이 이미 사라졌다면 정상 흐름이므로 경고하지 않는다.
             await Task.Delay(300).ConfigureAwait(false);
             if (Targets.ContainsKey(page.TargetId))
-                Warning("페이지 감시 초기화 실패: " + ex.Message);
+                Warning(L.Format("log.pageInitFailed", ex.Message));
         }
         finally
         {
@@ -249,7 +249,7 @@ internal static partial class Program
             if (!_isolatedWorldWarningShown)
             {
                 _isolatedWorldWarningShown = true;
-                Warning("격리 월드를 쓸 수 없어 페이지와 같은 환경에서 클릭을 추적한다: " + ex.Message);
+                Warning(L.Format("log.isolatedWorldUnavailable", ex.Message));
             }
 
             string fallback = Scripts.ClickTracker(hideBinding: true);

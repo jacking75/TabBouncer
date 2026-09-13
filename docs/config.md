@@ -10,7 +10,7 @@ TabBouncer는 아래 순서로 설정 폴더를 정한다.
 2. 실행 파일이 있는 폴더에 쓸 수 있으면 그 폴더의 `config.json`을 쓴다. 폴더째 들고 다니는 포터블 사용에 맞다.
 3. 실행 파일 폴더에 쓸 수 없으면(`C:\Program Files` 등) `%LOCALAPPDATA%\TabBouncer\config.json`을 쓴다. 이때 실행 파일 옆에 `config.json`이 있으면 처음 한 번만 복사해 시작값으로 삼는다.
 
-지금 쓰는 파일 경로는 설정 창 맨 위와 활동 로그의 "설정 파일:" 줄에 나온다.
+지금 쓰는 파일 경로는 설정 창 맨 위와 활동 로그의 "설정 파일:"(영어 화면은 "Settings file:") 줄에 나온다.
 
 파일이 없으면 기본값으로 새로 만든다. 설정 창에서 **기본값으로 복원**을 누르고 저장해도 기본값으로 돌아간다.
 
@@ -21,7 +21,7 @@ TabBouncer는 아래 순서로 설정 폴더를 정한다.
 - `enabled`는 읽지 않는다. 감시는 실행할 때마다 꺼진 상태로 시작하며 GUI에서만 켜고 끈다. 바로 켜고 싶으면 `startMonitoringOnLaunch`를 쓴다.
 - `dryRun`(관측 모드)은 GUI에서 잠시 바꾼 값이 우선한다. 파일의 `dryRun` 값을 실제로 바꾸거나 설정 창에서 저장했을 때만 파일 값을 따른다.
 - 명령줄 인수 `--port`, `--url`, `--strict`, `--no-preempt`로 준 값은 파일을 다시 읽어도 유지된다.
-- `language`는 TabBouncer를 다시 실행해야 적용된다.
+- `language`와 `languages.json`은 TabBouncer를 다시 실행해야 적용된다.
 
 ## 전체 키
 
@@ -62,10 +62,10 @@ TabBouncer는 아래 순서로 설정 폴더를 정한다.
 |---|---|---|---|
 | `startMonitoringOnLaunch` | bool | `false` | 실행하면 바로 감시를 시작한다. 처음에는 관측 모드로 결과를 확인한 뒤 켜는 것을 권한다. |
 | `minimizeToTray` | bool | `true` | 최소화하면 작업 표시줄에서 사라지고 알림 영역 아이콘으로만 남는다. |
-| `closeToTray` | bool | `true` | 닫기(X)를 누르면 트레이로 숨긴다. 끄면 닫기가 프로그램을 종료한다. |
+| `closeToTray` | bool | `true` | 닫기(X)를 누르면 트레이로 숨긴다. 끄면 닫기가 프로그램을 종료한다. 창의 **완전 종료** 버튼, 트레이 메뉴의 **종료**, Ctrl+Q는 이 값과 관계없이 항상 종료한다. |
 | `notifyOnBlock` | bool | `true` | 탭을 닫거나 이동을 되돌리면 Windows 알림을 띄운다. 3초 안의 여러 건은 한 번에 알린다. |
 | `closeChromeOnExit` | `"ask"` / `"always"` / `"never"` | `"ask"` | 완전히 종료할 때 전용 Chrome을 닫을지. `ask`는 매번 묻는다. 대화상자에서 "다음부터 묻지 않기"를 고르면 선택이 여기에 저장된다. |
-| `language` | `""` / `"ko"` / `"en"` | `""` | 화면 언어. 비우면 Windows 표시 언어가 한국어일 때 한국어, 아니면 영어다. 활동 로그 문구는 한국어로 남는다. |
+| `language` | `""` 또는 언어 코드(`"ko"`, `"en"`) | `""` | 화면 언어. [언어 파일](#언어-파일-languagesjson)에 등록된 언어 코드를 쓴다. 비우거나 등록되지 않은 코드면 Windows 표시 언어를 따르고, 그 언어도 등록돼 있지 않으면 기본 언어인 한국어를 쓴다. 활동 로그 문구도 이 언어를 따른다. |
 
 **Windows에 로그인하면 자동 실행**은 설정 창에만 있고 `config.json`에는 저장하지 않는다. 켜면 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`에 `TabBouncer` 값을 `"실행 파일 경로" --minimized`로 쓴다. 프로그램 폴더를 옮긴 뒤 한 번 실행하면 경로를 새 위치로 고친다. `--data-dir`로 실행한 인스턴스에서는 바꿀 수 없다.
 
@@ -79,6 +79,39 @@ TabBouncer는 아래 순서로 설정 폴더를 정한다.
 | `userDataDir` | string | `""` | 전용 프로필 폴더. 비우면 데이터 폴더의 `ChromeProfile`이다. 평소 Chrome 프로필은 Chrome 136부터 원격 디버깅이 금지돼 쓸 수 없다. |
 | `startUrl` | string | `""` | 전용 브라우저를 열 때 보여 줄 주소. 비우면 안내 페이지를 연다. |
 | `chromeArguments` | string[] | `[]` | 브라우저 실행 인수 추가분. 예: `["--lang=en"]` |
+
+## 언어 파일 (languages.json)
+
+화면에 나오는 문구(메인 창, 트레이, 알림, 설정 창, 안내 페이지, 판정 사유, 활동 로그)는 실행 파일 옆의 `languages.json` 한 파일에 언어별로 나눠 들어 있다. 설정 창의 **화면 언어** 목록은 이 파일에 등록된 언어를 파일에 적힌 순서대로 보여 준다.
+
+```json
+{
+  "defaultLanguage": "ko",
+  "languages": {
+    "ko": {
+      "name": "한국어",
+      "strings": {
+        "common.cancel": "취소",
+        "main.blocked.session": "이번 실행 {0}개"
+      }
+    },
+    "en": {
+      "name": "English",
+      "strings": {
+        "common.cancel": "Cancel",
+        "main.blocked.session": "{0} this session"
+      }
+    }
+  }
+}
+```
+
+- `defaultLanguage`는 기본 언어다. 다른 언어에 없는 문구는 기본 언어 문구로 보여 준다.
+- `languages`의 키가 언어 코드이고, `name`은 설정 창에 보여 줄 이름, `strings`는 `키: 문구` 표다.
+- `{0}`, `{1}`은 실행 중에 숫자나 주소로 바뀌는 자리다. 번역할 때 그대로 둔다.
+- 언어를 더하려면 `languages`에 새 코드(예: `"ja"`)와 `name`, `strings`를 넣고 TabBouncer를 다시 실행한 뒤 설정 창에서 고른다.
+- 실행 파일 안에도 같은 내용의 사본이 들어 있다. `languages.json`이 없으면 사본을 쓰고, 파일에 일부 키만 있으면 나머지는 사본 문구로 채운다. 파일을 해석하지 못하면 사본을 쓰고 활동 로그에 경고를 남긴다.
+- `languages.json`은 배포 파일에 들어 있어 새 버전을 덮어쓰면 함께 바뀐다. 직접 고친 번역은 따로 보관한다.
 
 ## 도메인 목록 표기 규칙
 

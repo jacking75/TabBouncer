@@ -81,8 +81,7 @@ internal static partial class Program
                         .ConfigureAwait(false) is { } own && own.EndsWith(file.Path, StringComparison.Ordinal)))
                 {
                     _portWarningShown = true;
-                    Warning($"포트 {_config.DebugPort}에는 TabBouncer 전용 프로필이 아닌 다른 Chrome이 있을 수 있다. " +
-                            "config.json의 debugPort를 0(자동)으로 두는 것을 권한다.");
+                    Warning(L.Format("log.portConflict", _config.DebugPort));
                 }
             }
             return fixedPort;
@@ -130,8 +129,8 @@ internal static partial class Program
             startInfo.ArgumentList.Add(startUrl);
 
         _launchedBrowserPath = chrome;
-        Info("브라우저를 실행한다: " + chrome);
-        Info("전용 프로필: " + profile);
+        Info(L.Format("log.launchingBrowser", chrome));
+        Info(L.Format("log.profile", profile));
         Process.Start(startInfo);
     }
 
@@ -169,8 +168,7 @@ internal static partial class Program
                 return candidate;
         }
 
-        throw new FileNotFoundException(
-            "Chrome 계열 브라우저를 찾지 못했다. config.json의 chromePath에 chrome.exe 경로를 지정해야 한다.");
+        throw new FileNotFoundException(L.T("error.browserNotFound"));
     }
 
     private static async Task ReadBrowserVersionAsync(CdpClient client)
@@ -241,7 +239,7 @@ internal static partial class Program
         }
         catch (Exception ex)
         {
-            Warning("안내 페이지를 만들지 못했다: " + ex.Message);
+            Warning(L.Format("log.guidePageFailed", ex.Message));
             return "";
         }
     }
@@ -300,16 +298,16 @@ internal static partial class Program
         try
         {
             await client.SendAsync("Browser.close", null, null, 3000).ConfigureAwait(false);
-            Info("전용 Chrome을 닫았다.");
+            Info(L.T("log.chromeClosed"));
         }
         catch (OperationCanceledException)
         {
             // Chrome이 응답을 보내기 전에 연결을 닫으면 대기 중인 명령이 취소된다. 닫힌 것으로 본다.
-            Info("전용 Chrome을 닫았다.");
+            Info(L.T("log.chromeClosed"));
         }
         catch (Exception ex)
         {
-            Warning("전용 Chrome을 닫지 못했다: " + ex.Message);
+            Warning(L.Format("log.chromeCloseFailed", ex.Message));
         }
     }
 }

@@ -69,11 +69,11 @@ internal static partial class Program
     internal static void ToggleMonitoring()
     {
         _config.Enabled = !_config.Enabled;
-        Info("감시 " + (_config.Enabled ? "재개" : "일시중지"));
+        Info(L.T(_config.Enabled ? "log.monitoringResumed" : "log.monitoringPaused"));
         PushStateToGuide();
         if (_config.Enabled && _waitingForChrome && _config.AutoLaunchChrome)
         {
-            Info("전용 Chrome이 닫혀 있어 함께 연다.");
+            Info(L.T("log.openChromeForMonitoring"));
             RequestChromeLaunch();
         }
     }
@@ -84,7 +84,7 @@ internal static partial class Program
             return;
 
         _config.DryRun = enabled;
-        Info("DRY-RUN " + (enabled ? "ON (관측만)" : "OFF (실제 종료)"));
+        Info(L.T(enabled ? "log.dryRunOn" : "log.dryRunOff"));
         PushStateToGuide();
     }
 
@@ -92,14 +92,14 @@ internal static partial class Program
     {
         LoadOrCreateConfig(adoptFileDryRun);
         PushStateToGuide();
-        Info("설정을 다시 적용했다.");
+        Info(L.T("log.configApplied"));
     }
 
     internal static void Undo(ClosedItem item)
     {
         if (item.Kind is ClosedKind.Kept or ClosedKind.Observed)
         {
-            Info("유지하거나 관측만 한 항목은 다시 열 필요가 없다: " + Shorten(item.Url));
+            Info(L.Format("log.undoNotNeeded", Shorten(item.Url)));
             return;
         }
 
@@ -107,7 +107,7 @@ internal static partial class Program
         lock (RecentClosed)
             RecentClosed.RemoveAll(existing => existing.GroupKey == item.GroupKey);
         OpenUrl(item.Url);
-        Info("탭을 다시 열었다: " + Shorten(item.Url));
+        Info(L.Format("log.reopened", Shorten(item.Url)));
     }
 
     internal static void AllowSite(ClosedItem item)
@@ -115,14 +115,14 @@ internal static partial class Program
         string host = HostOf(item.Url);
         if (host.Length == 0)
         {
-            Info("정상 사이트로 등록할 주소가 없다.");
+            Info(L.T("log.allowNoAddress"));
             return;
         }
 
         string domain = Etld1(host);
         if (_config.AllowedSites.Contains(domain, StringComparer.OrdinalIgnoreCase))
         {
-            Info("이미 정상 사이트로 등록되어 있다: " + domain);
+            Info(L.Format("log.allowExists", domain));
             return;
         }
 
@@ -131,7 +131,7 @@ internal static partial class Program
             if (!config.AllowedSites.Contains(domain, StringComparer.OrdinalIgnoreCase))
                 config.AllowedSites.Add(domain);
         });
-        Success("정상 사이트로 등록했다: " + domain);
+        Success(L.Format("log.allowAdded", domain));
     }
 
     internal static void RegisterAdDomain(ClosedItem item)
@@ -139,13 +139,13 @@ internal static partial class Program
         string domain = Etld1(HostOf(item.Url));
         if (domain.Length == 0)
         {
-            Info("광고 도메인으로 등록할 주소가 없다.");
+            Info(L.T("log.adDomainNoAddress"));
             return;
         }
 
         if (_config.EffectiveAdDomains.Contains(domain, StringComparer.OrdinalIgnoreCase))
         {
-            Info("이미 광고 도메인으로 등록되어 있다: " + domain);
+            Info(L.Format("log.adDomainExists", domain));
         }
         else
         {
@@ -156,7 +156,7 @@ internal static partial class Program
                 if (!config.EffectiveAdDomains.Contains(domain, StringComparer.OrdinalIgnoreCase))
                     config.AdDomains.Add(domain);
             });
-            Success("광고 도메인으로 등록했다: " + domain);
+            Success(L.Format("log.adDomainAdded", domain));
         }
 
         // 기준에 못 미쳐 유지했던 탭이 아직 열려 있으면 지금 닫는다.
@@ -169,7 +169,7 @@ internal static partial class Program
             if (normalPages > 1)
             {
                 _cdp?.Fire("Target.closeTarget", new JsonObject { ["targetId"] = target.TargetId });
-                Success("유지했던 광고 탭을 닫았다: " + Shorten(target.Url));
+                Success(L.Format("log.keptAdClosed", Shorten(target.Url)));
             }
         }
     }
@@ -179,13 +179,13 @@ internal static partial class Program
         string domain = Etld1(HostOf(item.OpenerUrl));
         if (domain.Length == 0)
         {
-            Info("감시 사이트로 등록할 출발 페이지가 없다.");
+            Info(L.T("log.watchNoOpener"));
             return;
         }
 
         if (_config.WatchedSites.Contains(domain, StringComparer.OrdinalIgnoreCase))
         {
-            Info("이미 감시 사이트로 등록되어 있다: " + domain);
+            Info(L.Format("log.watchExists", domain));
             return;
         }
 
@@ -194,7 +194,7 @@ internal static partial class Program
             if (!config.WatchedSites.Contains(domain, StringComparer.OrdinalIgnoreCase))
                 config.WatchedSites.Add(domain);
         });
-        Success("감시 사이트로 등록했다: " + domain);
+        Success(L.Format("log.watchAdded", domain));
     }
 
     internal static void UndoLatest()
@@ -202,7 +202,7 @@ internal static partial class Program
         if (LatestOfKind(ClosedKind.ClosedTab, ClosedKind.RevertedRedirect) is { } item)
             Undo(item);
         else
-            Info("되돌릴 탭이 없다.");
+            Info(L.T("log.undoNothing"));
     }
 
     internal static void AllowLatestSite()
@@ -210,7 +210,7 @@ internal static partial class Program
         if (LatestOfKind(ClosedKind.ClosedTab, ClosedKind.RevertedRedirect, ClosedKind.Observed) is { } item)
             AllowSite(item);
         else
-            Info("정상 사이트로 등록할 최근 탭이 없다.");
+            Info(L.T("log.allowNothing"));
     }
 
     private static ClosedItem? LatestOfKind(params ClosedKind[] kinds)
@@ -238,7 +238,7 @@ internal static partial class Program
         if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
-            Warning("열 수 없는 주소다: " + Shorten(raw));
+            Warning(L.Format("log.invalidUrl", Shorten(raw)));
             return false;
         }
 
@@ -249,12 +249,12 @@ internal static partial class Program
         }
         else if (_waitingForChrome)
         {
-            Info("전용 Chrome을 열고 주소를 연다: " + Shorten(uri.AbsoluteUri));
+            Info(L.Format("log.openAfterLaunch", Shorten(uri.AbsoluteUri)));
             RequestChromeLaunch();
         }
         else
         {
-            Info("Chrome에 연결되면 주소를 연다: " + Shorten(uri.AbsoluteUri));
+            Info(L.Format("log.openAfterConnect", Shorten(uri.AbsoluteUri)));
         }
         return true;
     }
@@ -276,7 +276,7 @@ internal static partial class Program
         }
         catch (Exception ex)
         {
-            Error("설정 파일을 읽지 못했다: " + ex.Message);
+            Error(L.Format("log.configReadFailed", ex.Message));
             return "";
         }
     }

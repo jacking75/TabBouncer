@@ -6,6 +6,8 @@
     두 가지 배포본을 만든다.
       TabBouncer-v<버전>-win-x64.zip               .NET 10 Desktop Runtime이 필요한 단일 실행 파일
       TabBouncer-v<버전>-win-x64-selfcontained.zip 런타임을 포함한 단일 실행 파일
+    zip에는 실행 파일 옆에 화면 문구 파일 languages.json과 README·LICENSE·CHANGELOG가 함께 들어가고,
+    사용자 설정을 덮어쓰지 않도록 config.json은 넣지 않는다.
     그리고 SHA256SUMS.txt와 CHANGELOG.md에서 잘라 낸 release-notes.md를 만든다.
 
     코드 서명 인증서(PFX)를 Base64로 넣은 환경 변수 SIGNING_CERTIFICATE_BASE64와

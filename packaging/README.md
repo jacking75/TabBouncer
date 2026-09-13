@@ -45,7 +45,7 @@ winget 매니페스트는 [microsoft/winget-pkgs](https://github.com/microsoft/w
 
    다음 버전부터는 `wingetcreate update jacking75.TabBouncer --version X.Y.Z --urls <zip 주소> --submit`으로 갱신할 수 있다.
 
-설치 매니페스트는 `NestedInstallerType: portable`이라 사용자 폴더에 압축을 풀고 `tabbouncer` 명령 별칭을 만든다. 배포 zip에는 `config.json`이 없어 업그레이드해도 설정이 유지된다.
+설치 매니페스트는 `NestedInstallerType: portable`이라 사용자 폴더에 압축을 풀고 `tabbouncer` 명령 별칭을 만든다. 배포 zip에는 `config.json`이 없어 업그레이드해도 설정이 유지된다. 화면 문구 파일 `languages.json`은 zip에 들어 있어 업그레이드하면 새 버전 문구로 바뀐다.
 
 ## 3. scoop
 
@@ -59,7 +59,7 @@ scoop은 두 가지 방법이 있다.
 
 - **버킷**: `scoop-bucket` 같은 별도 저장소를 만들고 `bucket/tabbouncer.json`으로 복사한다. 사용자는 `scoop bucket add jacking75 https://github.com/jacking75/scoop-bucket` 뒤 `scoop install tabbouncer`를 쓴다. 매니페스트에 `checkver`와 `autoupdate`가 있어, 버킷 저장소에서 [Excavator](https://github.com/ScoopInstaller/GithubActions) 워크플로를 돌리면 새 릴리스를 자동으로 반영한다.
 
-scoop은 앱 폴더를 버전마다 새로 만들기 때문에 `persist`로 `config.json`을 보존한다. 처음 설치하면 빈 `config.json`이 생기고, TabBouncer는 빈 설정 파일을 기본값으로 채운다.
+scoop은 앱 폴더를 버전마다 새로 만들기 때문에 `persist`로 `config.json`을 보존한다. 처음 설치하면 빈 `config.json`이 생기고, TabBouncer는 빈 설정 파일을 기본값으로 채운다. `languages.json`은 보존하지 않으므로 업데이트하면 새 버전 문구를 쓴다.
 
 ## 4. 코드 서명
 

@@ -102,7 +102,7 @@ internal static class WindowsIntegration
                 $"TabBouncer - {safe}.lnk");
 
             Type shellType = Type.GetTypeFromProgID("WScript.Shell")
-                             ?? throw new InvalidOperationException("WScript.Shell을 쓸 수 없다.");
+                             ?? throw new InvalidOperationException(L.T("error.shellUnavailable"));
             dynamic shell = Activator.CreateInstance(shellType)!;
             try
             {

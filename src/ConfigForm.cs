@@ -222,7 +222,10 @@ internal sealed class ConfigForm : Form
         });
         AddField(table, _closeChrome, "closeChromeOnExit", 220);
         _language.DropDownStyle = ComboBoxStyle.DropDownList;
-        _language.Items.AddRange(new object[] { L.T("config.language.system"), "한국어", "English" });
+        // 첫 항목은 "Windows 설정 따르기"(""), 그 뒤는 languages.json에 등록된 언어를 파일 순서대로 보여 준다.
+        _language.Items.Add(L.T("config.language.system"));
+        foreach (L.LanguageInfo language in L.Languages)
+            _language.Items.Add(language.Name);
         AddField(table, _language, "language", 220);
 
         AddHeading(table, L.T("config.group.browser"));
@@ -479,7 +482,7 @@ internal sealed class ConfigForm : Form
         _closeToTray.Checked = c.CloseToTray;
         _notify.Checked = c.NotifyOnBlock;
         _closeChrome.SelectedIndex = Math.Max(0, Array.IndexOf(Config.CloseChromeChoices, c.CloseChromeOnExit));
-        _language.SelectedIndex = Math.Max(0, Array.IndexOf(Config.LanguageChoices, c.Language));
+        _language.SelectedIndex = 1 + L.Languages.ToList().FindIndex(language => language.Code == c.Language);
         _chromePath.Text = c.ChromePath;
         _chromePath.PlaceholderText = L.T("config.field.chromePath.placeholder");
         _startUrl.Text = c.StartUrl;
@@ -519,7 +522,7 @@ internal sealed class ConfigForm : Form
         c.CloseToTray = _closeToTray.Checked;
         c.NotifyOnBlock = _notify.Checked;
         c.CloseChromeOnExit = Config.CloseChromeChoices[Math.Max(0, _closeChrome.SelectedIndex)];
-        c.Language = Config.LanguageChoices[Math.Max(0, _language.SelectedIndex)];
+        c.Language = _language.SelectedIndex > 0 ? L.Languages[_language.SelectedIndex - 1].Code : "";
         c.ChromePath = _chromePath.Text.Trim();
         c.StartUrl = _startUrl.Text.Trim();
         c.UserDataDir = _userDataDir.Text.Trim();

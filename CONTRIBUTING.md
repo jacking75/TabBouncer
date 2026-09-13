@@ -70,7 +70,7 @@ src/
   Models.cs             탭 상태, 클릭 의도, 점수 결과, 최근 항목
   Scripts.cs            클릭 추적 스크립트, 안내 페이지 HTML
   Reasons.cs            판정 사유 코드를 화면 문구로 바꿈
-  Strings.cs            한국어·영어 화면 문구 표
+  Localization.cs       languages.json을 읽어 현재 언어 문구를 돌려줌(L.T, L.Format)
   MainForm.cs           메인 창, 트레이, 알림, 단축키
   ConfigForm.cs         설정 창
   ExitDialog.cs         종료 확인 대화상자
@@ -78,6 +78,7 @@ src/
   UiState.cs            창 위치·크기 저장
   WindowsIntegration.cs 자동 실행 레지스트리, 바탕화면 바로가기, 탐색기 열기
   config.json           기본 설정 템플릿
+  languages.json        화면 문구 표. 한 파일에 언어별(ko, en, …)로 나눠 둠
 tests/
   browser-smoke.mjs     실제 Chrome을 구동하는 브라우저 스모크 테스트
 docs/
@@ -105,8 +106,9 @@ flowchart LR
 
 ## 작성 규칙
 
-- 사용자에게 보이는 문구는 한국어 평서문("~한다")으로 쓴다. 화면 문구는 `Strings.cs`에 한국어와 영어를 함께 넣고 `L.T("키")`로 쓴다.
-- 활동 로그 문구는 한국어로 쓴다. `Info`, `Success`, `Warning`, `Error`만 쓴다. GUI 프로그램이라 콘솔 출력은 `--self-test`에서만 쓴다.
+- 사용자에게 보이는 문구는 한국어 평서문("~한다")으로 쓴다. 코드에 문구를 직접 쓰지 않고 `src/languages.json`의 모든 언어 절에 같은 키로 넣은 뒤 `L.T("키")`나 `L.Format("키", 값)`으로 쓴다. 한국어(`ko`)가 기본 언어다.
+- 활동 로그 문구도 `languages.json`의 `log.*` 키로 넣는다. 로그는 `Info`, `Success`, `Warning`, `Error`만 쓴다. GUI 프로그램이라 콘솔 출력은 `--self-test`에서만 쓴다.
+- `--self-test`는 모든 언어가 기본 언어와 같은 키와 `{0}` 자리표시자를 가졌는지 검사한다.
 - 판정 스레드와 GUI 스레드가 설정을 함께 읽는다. 목록을 바꿀 때는 `UpdateConfigFile`로 복사본을 바꿔 한 번에 교체한다.
 - 개발 중 포트를 지정해야 하면 TCP 25001~25199 대역을 쓴다(데모 페이지는 25080).
 - 빌드는 여러 변경을 모아 필요한 만큼만 돌린다.
@@ -117,20 +119,26 @@ flowchart LR
 
 - [ ] `src/Config.cs`에 속성과 기본값을 넣는다. 검사가 필요하면 `Validate`에 추가한다.
 - [ ] `src/config.json` 템플릿에 넣는다.
-- [ ] 설정 창(`ConfigForm.cs`)에 컨트롤을 넣고, `Strings.cs`에 `config.field.<키>`와 `.help` 문구를 한국어·영어로 넣는다.
+- [ ] 설정 창(`ConfigForm.cs`)에 컨트롤을 넣고, `languages.json`의 모든 언어에 `config.field.<키>`와 `.help` 문구를 넣는다.
 - [ ] [docs/config.md](docs/config.md)의 표에 추가한다.
 - [ ] [CHANGELOG.md](CHANGELOG.md)에 적는다.
 
 ### 판정 사유 코드나 점수를 바꿀 때
 
 - [ ] `Program.Judge.cs`의 `Score` 또는 `ScoreRedirectHijack`을 고친다.
-- [ ] `Strings.cs`에 `reason.<코드>` 문구를 한국어·영어로 넣는다.
+- [ ] `languages.json`의 모든 언어에 `reason.<코드>` 문구를 넣는다.
 - [ ] [docs/how-it-works.md](docs/how-it-works.md)의 점수표를 고친다.
 - [ ] 필요하면 `Program.SelfTest.cs`의 검사를 맞춘다.
 
+### 화면 언어를 추가할 때
+
+- [ ] `src/languages.json`의 `languages`에 언어 코드(예: `ja`)로 절을 더하고 `name`과 기본 언어의 모든 키를 번역해 넣는다.
+- [ ] `dotnet run --project src -- --self-test`로 빠진 키와 자리표시자를 확인한다.
+- [ ] [docs/config.md](docs/config.md)의 `language` 설명과 [CHANGELOG.md](CHANGELOG.md)에 적는다.
+
 ### 이벤트 흐름을 바꿀 때
 
-- [ ] `tests/browser-smoke.mjs`가 기대하는 계약을 확인한다. `--data-dir`, `--port`, `--auto-start` 인수, 로그 문구 "사용자 클릭 추적을 시작했다", 이벤트 `stage` 값 `user-approved`와 `closed`, 문서 속성 `data-tabbouncer-tracker`다.
+- [ ] `tests/browser-smoke.mjs`가 기대하는 계약을 확인한다. `--data-dir`, `--port`, `--auto-start` 인수, `language: "ko"`일 때의 로그 문구 "사용자 클릭 추적을 시작했다"(`log.tracking`), 이벤트 `stage` 값 `user-approved`와 `closed`, 문서 속성 `data-tabbouncer-tracker`다.
 - [ ] 이벤트 필드를 바꾸면 [docs/logs.md](docs/logs.md)를 고친다.
 
 ## Pull Request 전에

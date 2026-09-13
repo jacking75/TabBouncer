@@ -57,7 +57,7 @@ internal sealed class CdpClient : IAsyncDisposable
         try
         {
             if (_socket.State != WebSocketState.Open)
-                throw new InvalidOperationException("CDP WebSocket이 닫혀 있다.");
+                throw new InvalidOperationException(L.T("error.cdpSocketClosed"));
 
             await _socket.SendAsync(
                 new ArraySegment<byte>(bytes),
@@ -79,7 +79,7 @@ internal sealed class CdpClient : IAsyncDisposable
         using var registration = timeout.Token.Register(() =>
         {
             if (_pending.TryRemove(id, out var timedOut))
-                timedOut.TrySetException(new TimeoutException($"CDP 명령 시간 초과: {method}"));
+                timedOut.TrySetException(new TimeoutException(L.Format("error.cdpTimeout", method)));
         });
         return await completion.Task.ConfigureAwait(false);
     }
@@ -111,7 +111,7 @@ internal sealed class CdpClient : IAsyncDisposable
                     result = await _socket.ReceiveAsync(
                         new ArraySegment<byte>(buffer), cancellationToken).ConfigureAwait(false);
                     if (result.MessageType == WebSocketMessageType.Close)
-                        throw new WebSocketException("Chrome이 CDP 연결을 종료했다.");
+                        throw new WebSocketException(L.T("error.cdpClosedByChrome"));
                     stream.Write(buffer, 0, result.Count);
                 }
                 while (!result.EndOfMessage);

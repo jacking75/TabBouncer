@@ -39,6 +39,7 @@ internal sealed class MainForm : Form
     private readonly Label _detailScore = new();
     private readonly RichTextBox _activity = new();
     private readonly NotifyIcon _tray = new();
+    private readonly ToolTip _toolTip = new();
     private readonly ToolStripMenuItem _trayMonitoring = new();
     private readonly ToolStripMenuItem _trayDryRun = new();
     private readonly ToolStripMenuItem _trayOpenChrome = new();
@@ -102,6 +103,7 @@ internal sealed class MainForm : Form
             Program.ShowRequested -= OnShowRequested;
             _tray.Visible = false;
             _tray.Dispose();
+            _toolTip.Dispose();
         };
     }
 
@@ -288,9 +290,18 @@ internal sealed class MainForm : Form
 
         var openConfig = new Button();
         Theme.StyleButton(openConfig, L.T("main.button.settings"), false, 120);
-        openConfig.Margin = new Padding(0);
+        openConfig.Margin = new Padding(0, 0, 8, 0);
         openConfig.Click += (_, _) => ShowConfigDialog();
         right.Controls.Add(openConfig);
+
+        // 닫기(X)는 설정에 따라 트레이로 숨으므로, 창에서 바로 완전히 끝낼 수 있는 버튼을 따로 둔다.
+        var exit = new Button();
+        Theme.StyleButton(exit, L.T("main.button.exit"), false, 90);
+        exit.ForeColor = Theme.Error;
+        exit.Margin = new Padding(0);
+        exit.Click += (_, _) => ExitApplication();
+        _toolTip.SetToolTip(exit, L.T("main.button.exit.tooltip"));
+        right.Controls.Add(exit);
         layout.Controls.Add(right, 1, 0);
         return layout;
     }
@@ -630,7 +641,7 @@ internal sealed class MainForm : Form
         SaveUiState();
     }
 
-    // 트레이 메뉴의 "종료", Ctrl+Q, (트레이로 숨기기를 끈 경우) 닫기 버튼이 모두 이 흐름을 탄다.
+    // 창의 "종료" 버튼, 트레이 메뉴의 "종료", Ctrl+Q, (트레이로 숨기기를 끈 경우) 닫기 버튼이 모두 이 흐름을 탄다.
     private void ExitApplication()
     {
         if (_exiting)

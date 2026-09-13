@@ -105,7 +105,7 @@ Without a selection, **Reopen** and **Allow site** apply to the most recently cl
 
 ### 4. Let it run in the tray
 
-Minimizing or pressing the close button (X) hides TabBouncer to the notification area. When it blocks an ad, Windows shows a notification; several blocks within 3 seconds are grouped. The tray menu offers monitoring, observe mode, Open Chrome, Open log folder and Exit. When you really exit, TabBouncer asks whether to close the dedicated Chrome too.
+Minimizing or pressing the close button (X) hides TabBouncer to the notification area. When it blocks an ad, Windows shows a notification; several blocks within 3 seconds are grouped. The tray menu offers monitoring, observe mode, Open Chrome, Open log folder and Exit. To quit completely instead of hiding in the tray, press the **Quit completely** button at the top right of the window or choose **Exit** from the tray menu. When you really exit, TabBouncer asks whether to close the dedicated Chrome too.
 
 Turn on **Settings → General → Start with Windows** to start minimized in the tray when you sign in.
 
@@ -119,7 +119,7 @@ Turn on **Settings → General → Start with Windows** to start minimized in th
 | Ctrl+L | Jump to the address box |
 | Ctrl+Z | Reopen the selected (or latest) tab |
 | Ctrl+, | Open Settings |
-| Ctrl+Q | Exit |
+| Ctrl+Q | Quit completely (does not hide to the tray) |
 | Ctrl+S / Esc | Save / cancel in Settings |
 
 ## How it decides
@@ -163,6 +163,8 @@ The most common keys:
 - `watchedSites` are sites that often spawn ads; tabs they open are judged more aggressively.
 - `favoriteSites` are shortcuts on the guide page.
 
+Choose the display language in **Settings → General → Language**; it applies after a restart. Korean is the default and English is supported. All interface and activity log text lives in `languages.json` next to the executable, one section per language, so adding a section there adds a language to the list. The format is described in the [language file section](docs/config.md#언어-파일-languagesjson) of the settings reference (Korean).
+
 Every key and default is listed in the [settings reference](docs/config.md), and command-line options in [command-line options](docs/cli.md) (Korean).
 
 ## Help
@@ -183,7 +185,7 @@ These documents are written in Korean. Browser translation works well on them.
 
 ## Uninstall
 
-1. Choose **Exit** from the tray icon menu.
+1. Press the **Quit completely** button in the window or choose **Exit** from the tray icon menu.
 2. If you enabled auto start, turn off **Settings → General → Start with Windows** and save first. If the folder is already gone, delete the `TabBouncer` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 3. Delete the program folder.
 4. Delete `%LOCALAPPDATA%\TabBouncer`. This removes the dedicated Chrome profile, logs and statistics.

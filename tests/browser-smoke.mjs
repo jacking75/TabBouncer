@@ -80,6 +80,8 @@ try {
     closeThreshold: 80,
     debounceMs: 1200,
     intentWindowMs: 3500,
+    // 아래에서 한국어 로그 문구를 기다리므로, Windows 표시 언어와 관계없이 한국어로 고정한다.
+    language: 'ko',
     debugPort,
     autoLaunchChrome: true,
     chromePath,
