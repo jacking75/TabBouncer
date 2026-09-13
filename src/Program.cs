@@ -28,6 +28,7 @@ internal sealed class Config
     public bool RefocusOpener { get; set; } = true;
     public bool BlockAutomaticCrossSitePopups { get; set; } = true;
     public bool ProtectExplicitClicks { get; set; } = true;
+    public bool BlockRedirectHijack { get; set; } = true;
 
     public int CloseThreshold { get; set; } = 80;
     public int DebounceMs { get; set; } = 1200;
@@ -94,6 +95,7 @@ internal sealed class PageContext
     public long PausedAt;
     public bool UserApproved;
     public string ApprovalReason = "";
+    public string CommittedUrl = "";
 }
 
 internal sealed record UserIntent(
@@ -973,6 +975,9 @@ internal static class Program
         {
             page.Redirects++;
             _ = EvaluateAsync(page, "frameNavigated");
+            // 이미 유지하기로 결정된(Decided != 0) 탭도 자체 하이재킹 검사는 매번 새로 받아야 한다.
+            // 그렇지 않으면 최초 로드 때 통과한 탭이 나중에 광고 사이트로 리다이렉트돼도 영원히 무시된다.
+            _ = EvaluateRedirectHijackAsync(page, sessionId, url);
         }
     }
 
@@ -1230,6 +1235,132 @@ internal static class Program
         {
             Error("탭 종료 실패: " + ex.Message);
             return false;
+        }
+    }
+
+    private static async Task EvaluateRedirectHijackAsync(PageContext page, string sessionId, string newUrl)
+    {
+        CdpClient? client = _cdp;
+        if (!_config.Enabled || !_config.BlockRedirectHijack || client is null)
+            return;
+        if (IsBlank(newUrl) || IsInternal(newUrl))
+            return;
+
+        string trustedUrl = page.CommittedUrl;
+        if (IsBlank(trustedUrl))
+        {
+            // 이 탭에서 처음으로 실제 내용이 로드된 것이다. 기준 URL로 기록만 하고 넘어간다.
+            page.CommittedUrl = newUrl;
+            return;
+        }
+
+        if (trustedUrl.Equals(newUrl, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        IntentAssessment intent = AssessSameTabIntent(page, newUrl);
+        (int score, string reason) = ScoreRedirectHijack(trustedUrl, newUrl, intent, _config);
+
+        if (score < _config.CloseThreshold)
+        {
+            page.CommittedUrl = newUrl;
+            return;
+        }
+
+        if (_config.DryRun)
+        {
+            Warning($"[DRY-RUN] 리다이렉트 차단 대상 {score}점 [{reason}] {Shorten(newUrl)}");
+            WriteEvent(new { stage = "redirect-dry-run", score, reason, url = newUrl, restoredUrl = trustedUrl });
+            return;
+        }
+
+        try
+        {
+            await client.SendAsync(
+                "Page.navigate",
+                new JsonObject { ["url"] = trustedUrl },
+                sessionId,
+                3000).ConfigureAwait(false);
+
+            lock (RecentClosed)
+            {
+                RecentClosed.Insert(0, new ClosedItem(newUrl, trustedUrl, score, reason, DateTime.Now));
+                if (RecentClosed.Count > 20)
+                    RecentClosed.RemoveRange(20, RecentClosed.Count - 20);
+            }
+
+            Success($"광고 리다이렉트 차단, 이전 페이지로 복귀 {score}점 [{reason}] {Shorten(newUrl)}");
+            WriteEvent(new { stage = "redirect-blocked", score, reason, url = newUrl, restoredUrl = trustedUrl });
+        }
+        catch (Exception ex)
+        {
+            Error("리다이렉트 복구 실패: " + ex.Message);
+        }
+    }
+
+    private static IntentAssessment AssessSameTabIntent(PageContext page, string destinationUrl)
+    {
+        if (!_config.ProtectExplicitClicks)
+            return IntentAssessment.Neutral("click-protection-off");
+
+        long now = Now;
+        IEnumerable<UserIntent> candidates = Intents.TryGetValue(page.TargetId, out var own)
+            ? own.ToArray()
+            : Array.Empty<UserIntent>();
+
+        UserIntent[] recent = candidates
+            .Where(intent => now - intent.ReceivedAt >= 0 && now - intent.ReceivedAt <= _config.IntentWindowMs)
+            .OrderByDescending(intent => intent.ReceivedAt)
+            .ToArray();
+
+        return AssessRecentIntents(destinationUrl, recent);
+    }
+
+    private static (int Score, string Reason) ScoreRedirectHijack(
+        string fromUrl, string toUrl, IntentAssessment intent, Config config)
+    {
+        if (intent.Approved)
+            return (-999, "explicit-user-navigation");
+        if (IsBlank(fromUrl))
+            return (-999, "initial-load");
+
+        string fromHost = HostOf(fromUrl);
+        string toHost = HostOf(toUrl);
+        if (toHost.Length == 0)
+            return (-999, "no-host");
+        if (Matches(toHost, config.AllowedSites))
+            return (-999, "allowed-site");
+        if (Matches(toHost, config.Whitelist))
+            return (-999, "whitelist");
+        if (LooksLikeSensitiveFlow(toUrl))
+            return (-999, "sensitive-flow");
+        if (fromHost.Length > 0 &&
+            Etld1(toHost).Equals(Etld1(fromHost), StringComparison.OrdinalIgnoreCase))
+            return (-999, "same-site-navigation");
+
+        int score = 0;
+        var reasons = new List<string>();
+
+        Add(intent.Automatic, 80, intent.Reason);
+        Add(intent.Unexpected, 80, intent.Reason);
+        Add(Matches(toHost, config.AdDomains), 20, "ad-domain");
+        Add(fromHost.Length > 0 && Matches(fromHost, config.WatchedSites), 15, "watched-site-origin");
+        Add(config.SuspiciousTlds.Contains(TldOf(toHost), StringComparer.OrdinalIgnoreCase),
+            15, "suspicious-tld");
+
+        if (intent.UserControl)
+        {
+            score -= 60;
+            reasons.Add("clicked-control");
+        }
+
+        return (score, string.Join('+', reasons));
+
+        void Add(bool condition, int points, string reason)
+        {
+            if (!condition)
+                return;
+            score += points;
+            reasons.Add(reason);
         }
     }
 
@@ -1737,6 +1868,46 @@ internal static class Program
             return Score("https://sub.safe.example/popup", "https://problem.example/", page, intent, config).Score <= -900;
         });
 
+        Check("클릭 없이 현재 탭이 광고 사이트로 리다이렉트되면 차단", () =>
+        {
+            var intent = IntentAssessment.Auto("no-user-gesture");
+            return ScoreRedirectHijack(
+                "https://reader.example/chapter-1", "https://popads.net/x", intent, config).Score
+                >= config.CloseThreshold;
+        });
+
+        Check("전혀 다른 사이트로 위장한 리다이렉트도 차단", () =>
+        {
+            var intent = IntentAssessment.Mismatch("passive-click-popup");
+            return ScoreRedirectHijack(
+                "https://reader.example/chapter-1", "https://scam-casino.example/", intent, config).Score
+                >= config.CloseThreshold;
+        });
+
+        Check("버튼을 눌러 이동하는 현재 탭 리다이렉트는 보호", () =>
+        {
+            var intent = IntentAssessment.Control("clicked-control");
+            return ScoreRedirectHijack(
+                "https://reader.example/chapter-1", "https://partner.example/", intent, config).Score
+                < config.CloseThreshold;
+        });
+
+        Check("로그인 등 민감한 흐름으로의 리다이렉트는 보호", () =>
+        {
+            var intent = IntentAssessment.Auto("no-user-gesture");
+            return ScoreRedirectHijack(
+                "https://reader.example/chapter-1", "https://identity.example/oauth/authorize", intent, config).Score
+                <= -900;
+        });
+
+        Check("같은 사이트 안에서의 이동은 보호", () =>
+        {
+            var intent = IntentAssessment.Auto("no-user-gesture");
+            return ScoreRedirectHijack(
+                "https://reader.example/chapter-1", "https://reader.example/chapter-2", intent, config).Score
+                <= -900;
+        });
+
         Check("기본 설정 경로는 실행 파일 폴더", () =>
             Path.GetFullPath(ConfigPath).Equals(
                 Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "config.json")),
@@ -1756,7 +1927,7 @@ internal static class Program
         });
 
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"자체 테스트 통과: {passed}/10");
+        Console.WriteLine($"자체 테스트 통과: {passed}/15");
         Console.ResetColor();
         return 0;
 

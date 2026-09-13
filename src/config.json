@@ -6,6 +6,7 @@
   "refocusOpener": true,
   "blockAutomaticCrossSitePopups": true,
   "protectExplicitClicks": true,
+  "blockRedirectHijack": true,
   "closeThreshold": 80,
   "debounceMs": 1200,
   "intentWindowMs": 3500,
