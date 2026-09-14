@@ -44,6 +44,13 @@ internal static partial class Program
             return Score("https://incompetencesorting.com/x?key=1", "https://problem.example/", page, intent, config).Score >= config.CloseThreshold;
         });
 
+        Check("다른 가산점이 없어도 버튼으로 열린 광고 도메인은 종료", () =>
+        {
+            var page = TestPage(now - 5000);
+            var intent = IntentAssessment.Control("clicked-control");
+            return Score("https://incompetencesorting.com/x?key=1", "", page, intent, config).Score >= config.CloseThreshold;
+        });
+
         Check("사용자 동작 없는 외부 팝업은 종료", () =>
         {
             var page = TestPage(now);
@@ -142,7 +149,7 @@ internal static partial class Program
         });
 
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"자체 테스트 통과: {passed}/17");
+        Console.WriteLine($"자체 테스트 통과: {passed}/18");
         Console.ResetColor();
         return 0;
 

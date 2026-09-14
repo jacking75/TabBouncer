@@ -508,7 +508,8 @@ internal static partial class Program
             15, "suspicious-tld");
         Add(Now - page.CreatedAt < 1500, 10, "fast-open");
         Add(page.Redirects >= 2, 10, "redirect-chain");
-        Add(intent.UserControl, -40, "clicked-control");
+        // 버튼 감점은 알 수 없는 사이트의 정상 창을 지키려는 것이다. 광고 도메인을 여는 버튼은 위장한 광고로 본다.
+        Add(intent.UserControl && !adDomain, -40, "clicked-control");
 
         return new ScoreResult(score, string.Join('+', reasons), breakdown);
 

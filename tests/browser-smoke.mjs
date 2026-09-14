@@ -26,6 +26,9 @@ await mkdir(chromeProfile, { recursive: true });
 const webPort = await getFreePort();
 const baseUrl = `http://127.0.0.1:${webPort}`;
 const popupBaseUrl = `http://localhost:${webPort}`;
+// Chrome은 *.localhost를 루프백으로 해석한다. 광고 도메인으로 등록해 다른 시나리오의 localhost 창과 구분한다.
+const adDomain = 'ads.localhost';
+const adBaseUrl = `http://${adDomain}:${webPort}`;
 const indexUrl = `${baseUrl}/`;
 
 const server = http.createServer((request, response) => {
@@ -50,6 +53,20 @@ const server = http.createServer((request, response) => {
          onclick="window.open('${popupBaseUrl}/passive', '_blank')">일반 영역을 누를 때 생기는 광고</div>
       <div id="burst"
          onclick="for (let i = 0; i < 12; i++) window.open('${popupBaseUrl}/burst-' + i, '_blank')">한꺼번에 생기는 광고 12개</div>`);
+    return;
+  }
+
+  if (request.url === '/iframe-page') {
+    response.end(`<!doctype html>
+      <meta charset="utf-8">
+      <title>TabBouncer iframe page</title>
+      <style>
+        body { font: 18px sans-serif; padding: 30px; }
+        button { display: block; margin: 18px; padding: 12px; width: 360px; }
+      </style>
+      <button id="ad-button"
+         onclick="window.open('${adBaseUrl}/ad-button', '_blank')">광고 도메인 창을 여는 가짜 버튼</button>
+      <iframe id="data-frame" src="data:text/html,%3Cp%3Eframe%3C/p%3E"></iframe>`);
     return;
   }
 
@@ -98,7 +115,7 @@ try {
       '--disable-background-networking'
     ],
     watchedSites: [],
-    adDomains: [],
+    adDomains: [adDomain],
     allowedSites: [],
     whitelist: [],
     suspiciousTlds: []
@@ -184,6 +201,41 @@ try {
     throw new Error('일반 영역 클릭으로 열린 광고 탭이 남아 있다.');
   console.log('통과: 일반 영역 클릭으로 열린 광고 탭 종료');
 
+  // 페이지 안 data: iframe의 문서 요청이 탭 주소를 덮어쓰면 opener가 data: 주소로 보여 판정이 틀어진다.
+  const iframePageUrl = `${baseUrl}/iframe-page`;
+  await pageClient.send('Page.navigate', { url: iframePageUrl });
+  await waitFor(
+    async () => (await currentUrl(pageClient)) === iframePageUrl,
+    5000,
+    'iframe 테스트 페이지로 이동하지 못했다.');
+  await waitFor(
+    () => trackerReady(pageClient),
+    5000,
+    '페이지 이동 후 클릭 추적기가 다시 설치되지 않았다.');
+  await click(pageClient, '#ad-button');
+  await waitForEvent(dataDirectory, event =>
+    event.data?.stage === 'closed' && event.data?.url?.includes('/ad-button'));
+  const adButtonEvent = (await readEvents(dataDirectory)).find(event =>
+    event.data?.stage === 'closed' && event.data?.url?.includes('/ad-button'));
+  if (adButtonEvent.data.openerUrl !== iframePageUrl)
+    throw new Error(`iframe 주소가 opener 주소를 덮어썼다: ${adButtonEvent.data.openerUrl}`);
+  // 탭을 닫은 직후에는 /json/list에 잠깐 남아 있을 수 있어 사라질 때까지 기다린다.
+  await waitFor(
+    async () => !(await pageUrls(debugPort)).some(url => url.includes('/ad-button')),
+    3000,
+    '버튼으로 열린 광고 도메인 탭이 남아 있다.');
+  console.log('통과: iframe이 있는 페이지에서 버튼으로 열린 광고 도메인 탭 종료');
+
+  await pageClient.send('Page.navigate', { url: indexUrl });
+  await waitFor(
+    async () => (await currentUrl(pageClient)) === indexUrl,
+    5000,
+    '테스트 페이지로 돌아오지 못했다.');
+  await waitFor(
+    () => trackerReady(pageClient),
+    5000,
+    '페이지 이동 후 클릭 추적기가 다시 설치되지 않았다.');
+
   await click(pageClient, '#burst');
   await waitFor(async () => {
     const events = await readEvents(dataDirectory);
@@ -194,7 +246,7 @@ try {
     throw new Error('폭주한 광고 탭 중 일부가 남아 있다.');
   console.log('통과: 3초 이내 폭주한 광고 탭 12개 모두 종료');
 
-  console.log('브라우저 스모크 테스트 통과: 5/5');
+  console.log('브라우저 스모크 테스트 통과: 6/6');
 } catch (error) {
   if (applicationOutput)
     console.error('\n--- TabBouncer 출력 ---\n' + applicationOutput);

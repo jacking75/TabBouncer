@@ -437,13 +437,10 @@ internal static partial class Program
             return;
         }
 
+        // 메인 프레임의 frameId는 페이지 targetId와 같다. iframe 문서 요청도 requestId와 loaderId가 같으므로
+        // 그것으로 메인 문서를 가리면 iframe 주소(data: 등)가 탭 주소를 덮어써 opener 판정이 틀어진다.
         string frameId = parameters?["frameId"]?.GetValue<string>() ?? "";
-        string requestId = parameters?["requestId"]?.GetValue<string>() ?? "";
-        string loaderId = parameters?["loaderId"]?.GetValue<string>() ?? "";
-        bool looksLikeMainDocument = frameId.Equals(targetId, StringComparison.Ordinal) ||
-                                     (requestId.Length > 0 &&
-                                      requestId.Equals(loaderId, StringComparison.Ordinal));
-        if (!looksLikeMainDocument)
+        if (!frameId.Equals(targetId, StringComparison.Ordinal))
             return;
 
         string url = parameters?["request"]?["url"]?.GetValue<string>() ?? "";

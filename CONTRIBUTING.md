@@ -21,7 +21,7 @@ node .\tests\browser-smoke.mjs
 
 - 빌드 결과는 저장소 루트의 `bin\Release`에 생긴다.
 - `--self-test`는 판정 점수 계산을 콘솔에서 검사한다.
-- `tests\browser-smoke.mjs`는 headless Chrome과 임시 데이터 폴더로 TabBouncer를 띄워 실제 이벤트 흐름 5가지를 검사한다. 빌드한 뒤에 실행한다.
+- `tests\browser-smoke.mjs`는 headless Chrome과 임시 데이터 폴더로 TabBouncer를 띄워 실제 이벤트 흐름 6가지를 검사한다. 빌드한 뒤에 실행한다.
 - 다른 Chromium 계열 브라우저로 스모크 테스트를 돌리려면 `TABBOUNCER_BROWSER`에 실행 파일 경로를 넣는다.
 
 ```powershell
