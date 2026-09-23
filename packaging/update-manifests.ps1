@@ -23,7 +23,11 @@ $zipName = "TabBouncer-v$Version-win-x64-selfcontained.zip"
 $url = "https://github.com/jacking75/TabBouncer/releases/download/v$Version/$zipName"
 
 if ($Sha256Sums -match '^https?://') {
-    $sums = (Invoke-WebRequest -Uri $Sha256Sums -UseBasicParsing).Content -split "`r?`n"
+    $content = (Invoke-WebRequest -Uri $Sha256Sums -UseBasicParsing).Content
+    if ($content -is [byte[]]) {
+        $content = [Text.Encoding]::UTF8.GetString($content)
+    }
+    $sums = $content -split "`r?`n"
 }
 else {
     $sums = Get-Content $Sha256Sums

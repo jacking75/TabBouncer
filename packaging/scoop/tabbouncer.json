@@ -10,7 +10,7 @@
     "architecture": {
         "64bit": {
             "url": "https://github.com/jacking75/TabBouncer/releases/download/v1.1.0/TabBouncer-v1.1.0-win-x64-selfcontained.zip",
-            "hash": "REPLACE_WITH_SHA256_FROM_RELEASE"
+            "hash": "3fb17e184d634fe84b54b169f7a7ce8ed5814b24810b4dbcdc6da198ff67e82f"
         }
     },
     "bin": "tabbouncer.exe",

@@ -2,7 +2,7 @@
 
 winget과 scoop으로 TabBouncer를 설치할 수 있게 하는 매니페스트다. 두 매니페스트 모두 GitHub 릴리스의 **런타임 포함** zip(`TabBouncer-vX.Y.Z-win-x64-selfcontained.zip`)을 쓴다. .NET 런타임 의존성을 따로 걸 필요가 없기 때문이다.
 
-> 계획상 등록은 릴리스가 2~3번 안정적으로 나온 뒤에 한다. 등록 전까지 이 폴더의 해시 값은 `REPLACE_WITH_SHA256_FROM_RELEASE`로 비워 둔다.
+winget 매니페스트는 공개 릴리스 v1.1.0의 파일과 해시로 채워져 있다. 등록 심사 상태는 [winget-pkgs PR #439742](https://github.com/microsoft/winget-pkgs/pull/439742)에서 확인한다.
 
 ```text
 packaging/
@@ -19,7 +19,8 @@ GitHub 릴리스를 게시한 뒤, 게시된 `SHA256SUMS.txt`로 매니페스트
 
 ```powershell
 ./packaging/update-manifests.ps1 -Version 1.1.0 `
-  -Sha256Sums https://github.com/jacking75/TabBouncer/releases/download/v1.1.0/SHA256SUMS.txt
+  -Sha256Sums https://github.com/jacking75/TabBouncer/releases/download/v1.1.0/SHA256SUMS.txt `
+  -ReleaseDate 2026-09-14
 ```
 
 릴리스에 올린 바로 그 빌드가 남아 있으면 `-Sha256Sums artifacts/SHA256SUMS.txt`를 줘도 된다. 다시 빌드한 zip은 해시가 달라지므로, 그 결과로 채운 매니페스트는 커밋하지 않는다.
@@ -36,16 +37,18 @@ winget 매니페스트는 [microsoft/winget-pkgs](https://github.com/microsoft/w
    ```
 
    `winget install --manifest`를 쓰려면 관리자 PowerShell에서 `winget settings --enable LocalManifestFiles`를 한 번 실행해야 한다.
+   v1.1.0은 로컬 매니페스트 설치 성공을 확인했다. `winget list TabBouncer`에서 설치된 버전 1.1.0이 조회된다.
 
-2. 제출한다. [wingetcreate](https://github.com/microsoft/winget-create)를 쓰면 포크와 PR을 대신 만든다.
+2. 제출한다. 모든 YAML의 스키마 버전을 [winget-pkgs PR 템플릿](https://github.com/microsoft/winget-pkgs/blob/master/.github/PULL_REQUEST_TEMPLATE.md)의 권장 버전에 맞춘다. [wingetcreate](https://github.com/microsoft/winget-create)를 쓰면 포크와 PR을 대신 만든다.
 
    ```powershell
-   wingetcreate submit --token <GitHub 토큰> packaging/winget
+   wingetcreate token -s
+   wingetcreate submit packaging/winget
    ```
 
    다음 버전부터는 `wingetcreate update jacking75.TabBouncer --version X.Y.Z --urls <zip 주소> --submit`으로 갱신할 수 있다.
 
-설치 매니페스트는 `NestedInstallerType: portable`이라 사용자 폴더에 압축을 풀고 `tabbouncer` 명령 별칭을 만든다. 배포 zip에는 `config.json`이 없어 업그레이드해도 설정이 유지된다. 화면 문구 파일 `languages.json`은 zip에 들어 있어 업그레이드하면 새 버전 문구로 바뀐다.
+설치 매니페스트는 `NestedInstallerType: portable`이라 사용자 폴더에 압축을 풀고 `tabbouncer` 명령 별칭을 만든다. 배포 zip에는 `config.json`이 없다. winget 업그레이드 때 설정이 유지되는지는 로컬 설치 시험에서 확인해야 한다. 화면 문구 파일 `languages.json`은 zip에 들어 있어 업그레이드하면 새 버전 문구로 바뀐다.
 
 ## 3. scoop
 

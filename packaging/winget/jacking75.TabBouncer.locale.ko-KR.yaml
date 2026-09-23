@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.6.0.schema.json
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.12.0.schema.json
 PackageIdentifier: jacking75.TabBouncer
 PackageVersion: 1.1.0
 PackageLocale: ko-KR
@@ -10,6 +10,6 @@ Tags:
   - chrome
   - 팝업차단
   - 광고차단
-ReleaseNotesUrl: https://github.com/jacking75/TabBouncer/blob/main/CHANGELOG.md
+ReleaseNotesUrl: https://github.com/jacking75/TabBouncer/releases/tag/v1.1.0
 ManifestType: locale
-ManifestVersion: 1.6.0
+ManifestVersion: 1.12.0
