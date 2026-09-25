@@ -2,7 +2,7 @@
 
 winget과 scoop으로 TabBouncer를 설치할 수 있게 하는 매니페스트다. 두 매니페스트 모두 GitHub 릴리스의 **런타임 포함** zip(`TabBouncer-vX.Y.Z-win-x64-selfcontained.zip`)을 쓴다. .NET 런타임 의존성을 따로 걸 필요가 없기 때문이다.
 
-winget 매니페스트는 공개 릴리스 v1.1.0의 파일과 해시로 채워져 있다. 등록 심사 상태는 [winget-pkgs PR #439742](https://github.com/microsoft/winget-pkgs/pull/439742)에서 확인한다.
+winget 매니페스트는 공개 릴리스 v1.1.0의 파일과 해시로 채워져 있다. [winget-pkgs PR #439742](https://github.com/microsoft/winget-pkgs/pull/439742)는 병합됐고, `jacking75.TabBouncer` 버전 `1.1.0`이 공개 winget 원본에서 조회된다.
 
 ```text
 packaging/

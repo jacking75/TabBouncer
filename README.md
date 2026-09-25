@@ -39,7 +39,17 @@ TabBouncer는 Windows 11의 Chrome에서 자동으로 생기는 광고 탭과 �
 - Google Chrome 136 이상. Chrome이 없으면 Microsoft Edge, Brave, Chromium을 차례로 찾는다. Edge는 스모크 테스트로 확인했고 Brave·Chromium은 실험적이다.
 - 런타임 포함 버전이 아니면 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
 
-### 받기
+### winget으로 설치하기
+
+Windows 패키지 관리자 winget에서 다음 명령으로 설치한다. 등록된 패키지 ID는 `jacking75.TabBouncer`이며, 런타임이 포함된 64비트 버전을 사용한다.
+
+```powershell
+winget install --id jacking75.TabBouncer --exact --source winget
+```
+
+설치 후 새 터미널에서 `tabbouncer`를 실행한다. 공개 원본에 게시된 버전과 패키지 정보는 `winget show --id jacking75.TabBouncer --exact --source winget`으로 확인할 수 있다.
+
+### ZIP 파일로 설치하기
 
 [Releases](https://github.com/jacking75/TabBouncer/releases/latest)에서 둘 중 하나를 받는다.
 
@@ -180,6 +190,10 @@ Get-FileHash .\TabBouncer-v1.1.0-win-x64.zip -Algorithm SHA256
 - 전용 프로필은 평소 Chrome 프로필과 분리돼 있어 비밀번호·확장·북마크를 공유하지 않는다.
 
 ## 제거
+
+winget으로 설치했다면 먼저 TabBouncer의 자동 실행 설정을 끄고 완전히 종료한 뒤 `winget uninstall --id jacking75.TabBouncer --exact`를 실행한다. 사용자 설정과 로그를 함께 지우려면 `%LOCALAPPDATA%\TabBouncer` 폴더도 지운다.
+
+ZIP 파일로 설치했다면 다음 순서로 제거한다.
 
 1. 창의 **완전 종료** 버튼이나 트레이 아이콘 메뉴의 **종료**를 누른다.
 2. 자동 실행을 켰다면 먼저 **설정 → 일반 → Windows에 로그인하면 자동 실행**을 끄고 저장한다. 이미 폴더를 지웠다면 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`의 `TabBouncer` 값을 지운다.

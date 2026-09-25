@@ -41,7 +41,17 @@ TabBouncer is not a tool that closes every new tab. It keeps what you wanted and
 - Google Chrome 136 or later. If Chrome is missing, TabBouncer looks for Microsoft Edge, Brave and Chromium. Edge is covered by the smoke test; Brave and Chromium are experimental.
 - [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0), unless you use the self-contained package
 
-### Get it
+### Install with winget
+
+Install the self-contained 64-bit package from Windows Package Manager with this command. The package ID is `jacking75.TabBouncer`.
+
+```powershell
+winget install --id jacking75.TabBouncer --exact --source winget
+```
+
+Open a new terminal and run `tabbouncer`. To check the version published in the winget source and its package details, run `winget show --id jacking75.TabBouncer --exact --source winget`.
+
+### Install from a ZIP file
 
 Download one of these from [Releases](https://github.com/jacking75/TabBouncer/releases/latest).
 
@@ -184,6 +194,10 @@ These documents are written in Korean. Browser translation works well on them.
 - The dedicated profile is separate from your everyday Chrome profile and shares no passwords, extensions or bookmarks.
 
 ## Uninstall
+
+If you installed with winget, turn off TabBouncer's auto start setting and quit it completely, then run `winget uninstall --id jacking75.TabBouncer --exact`. To remove user settings and logs too, delete `%LOCALAPPDATA%\TabBouncer`.
+
+If you installed from a ZIP file, follow these steps:
 
 1. Press the **Quit completely** button in the window or choose **Exit** from the tray icon menu.
 2. If you enabled auto start, turn off **Settings → General → Start with Windows** and save first. If the folder is already gone, delete the `TabBouncer` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
