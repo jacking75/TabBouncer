@@ -50,6 +50,7 @@ internal sealed class MainForm : Form
     private string _lastBlockedHost = "";
     private bool _initialVisibilityApplied;
     private bool _exiting;
+    private bool _shutdownComplete;
     private FormWindowState _lastVisibleState = FormWindowState.Normal;
 
     internal MainForm()
@@ -628,6 +629,13 @@ internal sealed class MainForm : Form
 
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
+        // 비동기 종료 도중 다시 X를 눌러도 정리가 끝나기 전에 창을 닫지 않는다.
+        if (_exiting && !_shutdownComplete && e.CloseReason == CloseReason.UserClosing)
+        {
+            e.Cancel = true;
+            return;
+        }
+
         if (!_exiting && e.CloseReason == CloseReason.UserClosing)
         {
             e.Cancel = true;
@@ -642,7 +650,7 @@ internal sealed class MainForm : Form
     }
 
     // 창의 "종료" 버튼, 트레이 메뉴의 "종료", Ctrl+Q, (트레이로 숨기기를 끈 경우) 닫기 버튼이 모두 이 흐름을 탄다.
-    private void ExitApplication()
+    private async void ExitApplication()
     {
         if (_exiting)
             return;
@@ -667,17 +675,21 @@ internal sealed class MainForm : Form
         }
 
         _exiting = true;
-        if (closeChrome)
+        _refreshTimer.Stop();
+        _notifyTimer.Stop();
+        Enabled = false;
+        UseWaitCursor = true;
+        try
         {
-            try
-            {
-                Task.Run(Program.CloseChromeAsync).Wait(TimeSpan.FromSeconds(4));
-            }
-            catch (AggregateException)
-            {
-            }
+            if (closeChrome)
+                await Task.Run(Program.CloseChromeAsync);
         }
-        Close();
+        finally
+        {
+            _shutdownComplete = true;
+            if (!IsDisposed)
+                Close();
+        }
     }
 
     private void SaveUiState()

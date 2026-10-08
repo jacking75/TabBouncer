@@ -17,11 +17,13 @@ dotnet build src -c Release
 dotnet run --project src -c Release
 dotnet run --project src -c Release -- --self-test
 node .\tests\browser-smoke.mjs
+dotnet run --project tests/shutdown -c Release
 ```
 
 - 빌드 결과는 저장소 루트의 `bin\Release`에 생긴다.
 - `--self-test`는 판정 점수 계산을 콘솔에서 검사한다.
 - `tests\browser-smoke.mjs`는 headless Chrome과 임시 데이터 폴더로 TabBouncer를 띄워 실제 이벤트 흐름 6가지를 검사한다. 빌드한 뒤에 실행한다.
+- `tests/shutdown`은 응답하지 않는 로컬 CDP 상대와 실제 WinForms 메시지 루프로 종료 중 UI 응답, Chrome 유지 선택, 송신 제한 시간, 대기 명령 취소와 중복 정리를 검사한다. 사용자 Chrome과 설정을 사용하지 않는다.
 - 다른 Chromium 계열 브라우저로 스모크 테스트를 돌리려면 `TABBOUNCER_BROWSER`에 실행 파일 경로를 넣는다.
 
 ```powershell

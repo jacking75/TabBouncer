@@ -6,7 +6,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>tabbouncer</AssemblyName>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Product>TabBouncer</Product>
     <Description>Closes automatic ad tabs and popups in a dedicated Chrome window while keeping the tabs you opened.</Description>
     <Copyright>Copyright (c) 2026 Choi HeungBae</Copyright>
@@ -20,6 +20,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="TabBouncer.Tests" />
     <EmbeddedResource Include="tabbouncer.ico" LogicalName="TabBouncer.tabbouncer.ico" />
     <!-- 화면 문구 표. 실행 파일에 넣은 사본은 옆 파일이 없을 때를 대비한 것이고, 옆 파일이 있으면 그 내용이 우선한다. -->
     <EmbeddedResource Include="languages.json" LogicalName="TabBouncer.languages.json" />
