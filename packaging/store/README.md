@@ -2,7 +2,8 @@
 
 - [x] Partner Center에서 TabBouncer 이름을 예약하고 실제 패키지 식별자를 확인한다.
 - [x] 공개 v1.1.1 배포본으로 Store 제출용 MSIX와 이미지를 만든다.
-- [ ] 패키지 구조와 실행을 검증한다.
+- [x] MakeAppx 패키지 구조 검사와 배포 실행 파일의 자체 테스트를 검증한다.
+- [ ] 설치된 MSIX의 실행과 종료를 검증한다.
 - [ ] 무료 가격, 속성, 연령 등급, 한국어·영어 목록, 개인정보 안내를 입력한다.
 - [ ] 인증 제출 결과를 확인한다.
 - [ ] Microsoft 인증과 공개 게시 결과를 확인한다.
@@ -23,6 +24,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File build/store-package.ps1
 
 결과는 `artifacts/store/`에 생긴다. 패키지 생성, 실제 패키지 실행, Store 업로드 검사, Microsoft 인증을 각각 별도 검증으로 취급한다. 업로드 성공만으로 Store 인증 또는 게시 완료를 주장하지 않는다.
 
+현재 MakeAppx의 기본 의미 검사가 통과했고, 패키지에 포함한 실행 파일의 자체 테스트는 18/18 통과했다. MSIX의 SHA-256은 `966c84ea30fa3756fdddf4b18f81bd5f7ee38d9f27f90a523b9704000d2aad47`이다. 이는 설치된 MSIX 실행 검증과 구분한다. 로컬 App Certification Kit 실행은 Windows에서 취소되어 검사 결과가 생성되지 않았다.
+
 목록 이미지는 기존 실제 앱 화면에 단색 여백을 추가해 Desktop 최소 크기를 충족한다. 화면의 내용·기록·버전 표시는 고치지 않는다. 기존 화면은 1.1.0에서 촬영했고 1.1.1의 같은 UI 기능을 설명하는 참고 자료다.
 
 ## 제출 자료
@@ -39,4 +42,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File build/store-package.ps1
 
 ## 제출 상태
 
-2026-10-09에 첫 제출 초안을 만들었다. 제출 ID는 `1152921505702076002`다. 인증 및 공개 게시 상태는 아직 확인하지 않았다.
+2026-10-09에 첫 제출 초안을 만들었다. 제출 ID는 `1152921505702076002`다. 무료 가격과 공개 배포 설정을 저장했으며, 유틸리티 + 도구 범주 및 개인정보처리방침·홈페이지·지원 URL은 속성 완료 상태로 저장했다. 연령 등급 설문은 도구 앱의 실제 기능에 맞게 작성했고 미리 보기는 Microsoft Store 3세 이상이다. IARC 약관 동의 및 최종 저장은 하지 않았다.
+
+Chrome 파일 업로드는 확장 프로그램의 파일 URL 접근 권한 부족으로 실패했다. 사용자가 지정한 Edge는 현재 자동화 브라우저 목록에 나타나지 않으므로 Edge 연결을 기다리고 있다. 패키지 업로드, 한국어·영어 목록, 연령 등급 저장과 인증 제출은 아직 완료하지 않았다. 인증 및 공개 게시 상태는 아직 확인하지 않았다. 초안 링크는 [Partner Center](https://partner.microsoft.com/ko-kr/dashboard/products/9PKGB7BHTBLB/overview)다.
